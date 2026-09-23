@@ -68,11 +68,71 @@ bot = AutoposterBot()
 # ---------------------------------------------------------------------------
 
 @bot.tree.command(
+    name="post",
+    description="Generate and post a fresh Reel to Instagram (default: r/funny)",
+)
+@app_commands.describe(
+    subreddit="Subreddit name (default: funny, or tifu, facepalm, AskReddit)",
+    tone="Script/caption tone style (default: funny)",
+)
+@app_commands.choices(tone=[
+    app_commands.Choice(name=t, value=t) for t in _VALID_TONES
+])
+async def post_command(
+    interaction: discord.Interaction,
+    subreddit: str = "funny",
+    tone: app_commands.Choice[str] | None = None,
+) -> None:
+    """Slash command: post a Reel to Instagram."""
+    subreddit = subreddit.strip().lstrip("r/").lower()
+    tone_value = tone.value if tone else "funny"
+
+    await interaction.response.send_message(
+        embed=_build_progress_embed(subreddit, tone_value, stage="🚀 Starting Reel generation pipeline…"),
+        ephemeral=False,
+    )
+
+    asyncio.create_task(
+        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=False)
+    )
+
+
+@bot.tree.command(
+    name="dryrun",
+    description="Generate a video without uploading to Instagram (test run)",
+)
+@app_commands.describe(
+    subreddit="Subreddit name (default: funny)",
+    tone="Script/caption tone style",
+)
+@app_commands.choices(tone=[
+    app_commands.Choice(name=t, value=t) for t in _VALID_TONES
+])
+async def dryrun_command(
+    interaction: discord.Interaction,
+    subreddit: str = "funny",
+    tone: app_commands.Choice[str] | None = None,
+) -> None:
+    """Slash command: test render video without publishing."""
+    subreddit = subreddit.strip().lstrip("r/").lower()
+    tone_value = tone.value if tone else "funny"
+
+    await interaction.response.send_message(
+        embed=_build_progress_embed(subreddit, tone_value, stage="🧪 Rendering test Reel (dry-run)…"),
+        ephemeral=False,
+    )
+
+    asyncio.create_task(
+        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=True)
+    )
+
+
+@bot.tree.command(
     name="generate",
     description="Generate and post a Reel from a Reddit subreddit",
 )
 @app_commands.describe(
-    subreddit="Subreddit name (without r/), e.g. AskReddit",
+    subreddit="Subreddit name (without r/), e.g. funny, AskReddit",
     tone="Script/caption tone style",
 )
 @app_commands.choices(tone=[
@@ -80,11 +140,10 @@ bot = AutoposterBot()
 ])
 async def generate(
     interaction: discord.Interaction,
-    subreddit: str,
+    subreddit: str = "funny",
     tone: app_commands.Choice[str] | None = None,
 ) -> None:
     """Slash command: trigger the full Reddit → Instagram Reels pipeline."""
-    # Validate subreddit name
     subreddit = subreddit.strip().lstrip("r/").lower()
     if not subreddit.replace("_", "").isalnum():
         await interaction.response.send_message(
@@ -103,7 +162,7 @@ async def generate(
 
     # Run pipeline in background
     asyncio.create_task(
-        _run_pipeline_and_report(interaction, subreddit, tone_value)
+        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=False)
     )
 
 
@@ -111,10 +170,11 @@ async def _run_pipeline_and_report(
     interaction: discord.Interaction,
     subreddit: str,
     tone: str | None,
+    dry_run: bool = False,
 ) -> None:
     """Run the pipeline and update the Discord message with the result."""
     try:
-        result = await run_pipeline(subreddit, tone=tone)
+        result = await run_pipeline(subreddit, tone=tone, dry_run=dry_run)
         embed = _build_result_embed(result)
         await interaction.edit_original_response(embed=embed)
     except Exception as exc:
