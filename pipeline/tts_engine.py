@@ -65,8 +65,9 @@ async def generate_tts(
     voice: str = _DEFAULT_VOICE,
     rate: str = _DEFAULT_RATE,
     max_duration_sec: float = _MAX_DURATION_SEC,
-    provider: str = "edge-tts",
+    provider: str = "kokoro",
     elevenlabs_voice_id: str | None = None,
+    kokoro_voice: str = "am_adam",
 ) -> TTSResult:
     """Generate TTS audio and word-boundary timing from *script*.
 
@@ -76,8 +77,9 @@ async def generate_tts(
         voice: edge-tts voice name (see `edge-tts --list-voices`).
         rate: Speech rate modifier e.g. "+5%" or "-5%".
         max_duration_sec: Reject audio longer than this many seconds.
-        provider: "edge-tts" (free) or "elevenlabs" (Zack D Films style/clone).
+        provider: "kokoro" | "fish-audio" | "edge-tts" | "elevenlabs".
         elevenlabs_voice_id: Voice ID if using ElevenLabs.
+        kokoro_voice: Kokoro voice identifier (e.g., 'am_adam').
 
     Returns:
         A :class:`TTSResult` with paths and metadata.
@@ -94,14 +96,22 @@ async def generate_tts(
     fish_key = os.getenv("FISH_AUDIO_API_KEY", "").strip()
     fish_voice = os.getenv("FISH_AUDIO_VOICE_ID", "").strip() or "c494e0005f3544f3b1bf98c6ffb4c645"
 
-    if provider.lower() in ("fish-audio", "fish_audio", "fish") and fish_key:
+    prov = provider.lower()
+    if prov in ("kokoro", "kokoro-tts", "kokoro.git"):
+        logger.info("Generating TTS with Kokoro (voice=%s, words=%d)", kokoro_voice, len(script.split()))
+        try:
+            boundaries = await asyncio.to_thread(_synthesise_kokoro, script, audio_path, kokoro_voice, 1.0)
+        except Exception as exc:
+            logger.warning("Kokoro generation failed (%s). Falling back to voice: %s", exc, voice)
+            boundaries = await _synthesise(script, audio_path, voice, rate)
+    elif prov in ("fish-audio", "fish_audio", "fish") and fish_key:
         logger.info("Generating TTS with Fish.Audio (voice_id=%s, words=%d)", fish_voice, len(script.split()))
         try:
             boundaries = await _synthesise_fish_audio(script, audio_path, fish_voice, fish_key)
         except TTSError as exc:
             logger.warning("Fish.Audio generation failed (%s). Falling back to voice: %s", exc, voice)
             boundaries = await _synthesise(script, audio_path, voice, rate)
-    elif provider.lower() == "elevenlabs" and os.getenv("ELEVENLABS_API_KEY"):
+    elif prov == "elevenlabs" and os.getenv("ELEVENLABS_API_KEY"):
         eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
         v_id = elevenlabs_voice_id or "UgBBYS2sOqTuMpoF3BR0"
         logger.info("Generating TTS with ElevenLabs (voice_id=%s, words=%d)", v_id, len(script.split()))
@@ -291,6 +301,68 @@ async def _synthesise(
         raise TTSError("edge-tts returned no audio data")
 
     audio_path.write_bytes(b"".join(audio_chunks))
+    return boundaries
+
+
+def _synthesise_kokoro(
+    script: str,
+    audio_path: Path,
+    voice: str = "am_adam",
+    speed: float = 1.0,
+) -> list[WordBoundary]:
+    """Synthesise speech locally using Kokoro TTS (https://github.com/hexgrad/kokoro)."""
+    import numpy as np
+    import soundfile as sf
+    import torch
+    from kokoro import KPipeline
+
+    pipeline = KPipeline(lang_code="a")
+    generator = pipeline(script, voice=voice, speed=speed)
+
+    all_audio = []
+    boundaries: list[WordBoundary] = []
+    current_ms = 0.0
+    sample_rate = 24000
+
+    for gs, ps, audio in generator:
+        if isinstance(audio, torch.Tensor):
+            audio_np = audio.cpu().numpy()
+        else:
+            audio_np = np.array(audio)
+
+        all_audio.append(audio_np)
+        chunk_duration_sec = len(audio_np) / sample_rate
+        chunk_duration_ms = chunk_duration_sec * 1000.0
+
+        words = gs.split()
+        if words and chunk_duration_ms > 0:
+            total_chars = max(1, sum(len(w) for w in words))
+            chunk_time = current_ms
+            for w in words:
+                w_dur = (len(w) / total_chars) * chunk_duration_ms
+                boundaries.append(WordBoundary(word=w, start_ms=chunk_time, duration_ms=w_dur))
+                chunk_time += w_dur
+
+        current_ms += chunk_duration_ms
+
+    if not all_audio:
+        raise TTSError("Kokoro TTS returned no audio data")
+
+    full_audio = np.concatenate(all_audio)
+    wav_path = audio_path.with_suffix(".wav")
+    sf.write(str(wav_path), full_audio, sample_rate)
+
+    # Convert to MP3
+    cmd = ["ffmpeg", "-y", "-i", str(wav_path), "-codec:a", "libmp3lame", "-qscale:a", "2", str(audio_path)]
+    try:
+        subprocess.run(cmd, capture_output=True, check=True)
+        if wav_path.exists():
+            wav_path.unlink()
+    except Exception as exc:
+        logger.warning("FFmpeg mp3 conversion failed (%s), keeping wav as output", exc)
+        if wav_path.exists():
+            wav_path.rename(audio_path)
+
     return boundaries
 
 

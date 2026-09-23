@@ -44,10 +44,14 @@ posting:
 
 # ---- TTS / Audio --------------------------------------------
 tts:
-  # Provider: "fish-audio" | "edge-tts" | "elevenlabs"
-  provider: fish-audio
+  # Provider: "kokoro" | "fish-audio" | "edge-tts" | "elevenlabs"
+  provider: kokoro
 
-  # Fallback Voice if API key runs out of credit:
+  # Kokoro TTS configuration (Adam voice: https://github.com/hexgrad/kokoro.git)
+  kokoro:
+    voice: "am_adam"
+
+  # Fallback Voice if other engines fail:
   voice: en-US-ChristopherNeural
 
   # Strictly use only this single voice (no rotating other voices)

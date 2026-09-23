@@ -158,8 +158,10 @@ async def run_pipeline(
             rate = tts_cfg.get("rate", "+5%")
             eleven_cfg = tts_cfg.get("elevenlabs", {})
             eleven_voice_id = eleven_cfg.get("voice_id", "pNInz6obpgDQGcFmaJgB")
+            kokoro_cfg = tts_cfg.get("kokoro", {})
+            kokoro_voice = kokoro_cfg.get("voice", "am_adam")
 
-            job_logger.info("[Stage 3/7] Generating TTS audio (provider=%s, voice=%s)", provider, voice)
+            job_logger.info("[Stage 3/7] Generating TTS audio (provider=%s, voice=%s, kokoro_voice=%s)", provider, voice, kokoro_voice)
             tts_result = await generate_tts(
                 script=script,
                 output_dir=tmp.path,
@@ -168,6 +170,7 @@ async def run_pipeline(
                 max_duration_sec=tts_cfg.get("max_duration_sec", 60.0),
                 provider=provider,
                 elevenlabs_voice_id=eleven_voice_id,
+                kokoro_voice=kokoro_voice,
             )
 
             # ----------------------------------------------------------------
