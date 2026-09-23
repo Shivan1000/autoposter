@@ -374,6 +374,27 @@ class RedditScraper:
                     except Exception as exc:
                         logger.warning("Could not extract live comments from %s: %s", post_url, exc)
 
+                if not comments:
+                    try:
+                        json_url = f"https://www.reddit.com/r/{subreddit}/comments/{selected['id']}.json"
+                        async with httpx.AsyncClient(headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, timeout=5.0) as client:
+                            resp = await client.get(json_url)
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                if len(data) > 1:
+                                    children = data[1].get("data", {}).get("children", [])
+                                    for child in children:
+                                        cdata = child.get("data", {})
+                                        c_body = cdata.get("body", "").strip()
+                                        c_author = cdata.get("author", "")
+                                        if c_body and c_author and c_author.lower() not in ("automoderator", "[deleted]"):
+                                            clean_text = c_body.replace("\n", " ").strip()
+                                            display_text = clean_text if len(clean_text) <= 160 else clean_text[:157] + "..."
+                                            comments.append({"author": c_author, "text": display_text})
+                                            break
+                    except Exception as exc:
+                        logger.debug("JSON comments fallback failed: %s", exc)
+
                 selected["comments"] = comments
                 logger.info("Extracted %d comments for post [%s]", len(comments), selected["id"])
 
@@ -398,11 +419,11 @@ class RedditScraper:
 
     @staticmethod
     def _build_post_html(selected: dict, subreddit: str) -> str:
-        """Build a clean Reddit-style post card as HTML with title and meme image."""
+        """Build a clean Reddit-style post card as HTML with title, meme image, and single top comment."""
         import html as html_mod
         title = html_mod.escape(selected["title"])
         author = html_mod.escape(selected.get("author", "[unknown]"))
-        score_text = f"{selected['score']:,}" if selected["score"] > 0 else "14.2k"
+        score_text = f"{selected['score']:,}" if selected.get("score", 0) > 0 else "14.2k"
 
         # Build image HTML if thread contains an image
         image_url = selected.get("image_url")
@@ -411,6 +432,31 @@ class RedditScraper:
             image_html = f"""
             <div class="post-image-container">
                 <img src="{image_url}" class="post-image" alt="Meme Image" />
+            </div>
+            """
+
+        # Extract single top comment
+        comments = selected.get("comments") or []
+        comment_html = ""
+        if comments:
+            top_c = comments[0]
+            c_author = html_mod.escape(top_c.get("author", "TopRedditor"))
+            c_text = html_mod.escape(top_c.get("text", ""))
+            comment_html = f"""
+            <div class="comment-section">
+                <div class="comment-card">
+                    <div class="comment-header">
+                        <div class="comment-avatar">💬</div>
+                        <span class="comment-author">u/{c_author}</span>
+                        <span class="comment-time">• 2h ago</span>
+                        <span class="comment-badge">TOP COMMENT</span>
+                    </div>
+                    <div class="comment-body">{c_text}</div>
+                    <div class="comment-footer">
+                        <span class="comment-votes">⬆ 3.8k ⬇</span>
+                        <span class="comment-reply">Reply</span>
+                    </div>
+                </div>
             </div>
             """
 
@@ -471,19 +517,19 @@ class RedditScraper:
             color: #818384;
         }}
         .title {{
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 600;
             line-height: 1.3;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             color: #f2f4f5;
             letter-spacing: -0.2px;
         }}
         .post-image-container {{
             width: 100%;
-            max-height: 360px;
+            max-height: 320px;
             overflow: hidden;
             border-radius: 10px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -493,7 +539,7 @@ class RedditScraper:
         .post-image {{
             width: 100%;
             height: auto;
-            max-height: 360px;
+            max-height: 320px;
             object-fit: contain;
             border-radius: 8px;
         }}
@@ -501,6 +547,7 @@ class RedditScraper:
             display: flex;
             gap: 8px;
             align-items: center;
+            margin-bottom: {('10px' if comment_html else '0')};
         }}
         .action-btn {{
             display: flex;
@@ -508,12 +555,68 @@ class RedditScraper:
             gap: 5px;
             background: #272729;
             border-radius: 16px;
-            padding: 5px 12px;
+            padding: 4px 10px;
             font-size: 11px;
             color: #818384;
             font-weight: 600;
         }}
         .upvote {{ color: #ff4500; font-weight: bold; }}
+        .comment-section {{
+            margin-top: 8px;
+            border-top: 1px solid #2d2d2e;
+            padding-top: 10px;
+        }}
+        .comment-card {{
+            background: #212123;
+            border: 1px solid #343536;
+            border-left: 3px solid #ff4500;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }}
+        .comment-header {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }}
+        .comment-avatar {{
+            font-size: 12px;
+        }}
+        .comment-author {{
+            font-size: 11px;
+            font-weight: 700;
+            color: #d7dadc;
+        }}
+        .comment-time {{
+            font-size: 10px;
+            color: #818384;
+        }}
+        .comment-badge {{
+            font-size: 9px;
+            font-weight: 800;
+            color: #ff4500;
+            background: rgba(255, 69, 0, 0.12);
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-left: auto;
+            letter-spacing: 0.5px;
+        }}
+        .comment-body {{
+            font-size: 13px;
+            color: #f2f4f5;
+            line-height: 1.35;
+            margin-bottom: 6px;
+        }}
+        .comment-footer {{
+            display: flex;
+            gap: 12px;
+            font-size: 10px;
+            color: #818384;
+            font-weight: 600;
+        }}
+        .comment-votes {{
+            color: #ff4500;
+        }}
     </style>
 </head>
 <body>
@@ -536,6 +639,7 @@ class RedditScraper:
             <div class="action-btn">💬 524 Comments</div>
             <div class="action-btn">↗ Share</div>
         </div>
+        {comment_html}
     </div>
 </body>
 </html>"""
