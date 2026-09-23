@@ -59,11 +59,14 @@ class Caption:
     text: str            # Caption body (no hashtags)
     hashtags: list[str]  # List of hashtag strings (with #)
     tone: str
+    title: str = ""
 
     @property
     def full_caption(self) -> str:
-        """Combined caption + hashtags ready for Instagram."""
+        """Combined title + caption + hashtags ready for Instagram."""
         tags = " ".join(self.hashtags)
+        if self.title:
+            return f"{self.title}\n\n{self.text}\n\n{tags}"
         return f"{self.text}\n\n{tags}"
 
 
@@ -120,6 +123,7 @@ class CaptionGenerator:
 
         raw = await self._call_api(post.title, script, chosen_tone)
         caption = self._parse_response(raw, chosen_tone)
+        caption.title = post.title
 
         logger.info(
             "Caption generated (%d chars, %d hashtags)",
