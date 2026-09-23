@@ -37,15 +37,44 @@ posting:
 
 # ---- TTS / Audio --------------------------------------------
 tts:
-  # Any valid edge-tts voice name.
-  # List available: `edge-tts --list-voices`
-  voice: en-US-GuyNeural
-  # Voice speed offset (e.g. "+10%" or "-5%")
-  rate: "+0%"
+  # Provider: "edge-tts" (100% free) or "elevenlabs" (for real Zack D. Films voice clone)
+  provider: edge-tts
+
+  # Voice name.
+  # For Zack D. Films style (deep, authoritative, fast-paced):
+  #   - en-US-ChristopherNeural (Edge-TTS closest free equivalent to Zack D. Films)
+  # Other popular storytelling voices:
+  #   - en-US-BrianNeural       (Casual, viral story narrator)
+  #   - en-US-GuyNeural         (Passionate, dynamic)
+  #   - en-US-AndrewMultilingualNeural (Authentic, confident)
+  #   - en-US-EricNeural        (Rational, scientific)
+  voice: en-US-ChristopherNeural
+
+  # If true, randomly picks a voice from voices_pool for each reel
+  rotate_voices: false
+
+  # Pool of voices used when rotate_voices is true
+  voices_pool:
+    - en-US-ChristopherNeural
+    - en-US-BrianNeural
+    - en-US-GuyNeural
+    - en-US-AndrewMultilingualNeural
+    - en-US-EricNeural
+
+  # Voice speed offset (Zack D. talks fast: +5% to +10% recommended)
+  rate: "+5%"
   # Max word count for the spoken script (keeps video ≤ ~45s)
   max_words: 130
   # Hard upper limit on generated audio duration (seconds)
   max_duration_sec: 60
+
+  # ElevenLabs configuration (optional - set ELEVENLABS_API_KEY in .env)
+  elevenlabs:
+    # Zack D. Films voice ID or your custom voice clone ID from elevenlabs.io
+    voice_id: "pNInz6obpgDQGcFmaJgB"  # Adam (or replace with your Zack D voice clone ID)
+    model_id: "eleven_multilingual_v2"
+    stability: 0.5
+    similarity_boost: 0.85
 
 # ---- Subtitles ----------------------------------------------
 subtitles:
@@ -58,7 +87,8 @@ subtitles:
   outline_width: 5
   shadow: 2
   # Vertical position of subtitle block (pixels from bottom)
-  margin_bottom: 500
+  # 350px leaves clean space below the centered Reddit card & above Reels buttons
+  margin_bottom: 350
   margin_left: 60
   margin_right: 60
 
@@ -76,8 +106,8 @@ video:
   background_dir: assets/gameplay
   # Screenshot overlay: fraction of frame width
   screenshot_width_fraction: 0.92
-  # Screenshot vertical position: fraction from top of frame
-  screenshot_y_fraction: 0.08
+  # Screenshot vertical position: "middle" / "center" or numeric fraction from top (e.g. 0.08)
+  screenshot_y_fraction: "middle"
   # Corner radius for screenshot overlay (pixels)
   screenshot_corner_radius: 20
 

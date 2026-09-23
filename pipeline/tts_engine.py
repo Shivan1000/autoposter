@@ -15,12 +15,16 @@ subtitle_builder.py.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
+import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import edge_tts
+import httpx
 from edge_tts import Communicate
 from edge_tts.exceptions import EdgeTTSException
 
@@ -28,8 +32,8 @@ from utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_VOICE = "en-US-GuyNeural"
-_DEFAULT_RATE = "+0%"
+_DEFAULT_VOICE = "en-US-ChristopherNeural"
+_DEFAULT_RATE = "+5%"
 _MAX_DURATION_SEC = 60.0
 _MIN_DURATION_SEC = 2.0
 
@@ -49,7 +53,7 @@ class TTSResult:
 
 @dataclass
 class WordBoundary:
-    """A single word boundary event from edge-tts."""
+    """A single word boundary event from edge-tts or ElevenLabs."""
     word: str
     start_ms: float   # Offset from audio start (milliseconds)
     duration_ms: float
@@ -61,6 +65,8 @@ async def generate_tts(
     voice: str = _DEFAULT_VOICE,
     rate: str = _DEFAULT_RATE,
     max_duration_sec: float = _MAX_DURATION_SEC,
+    provider: str = "edge-tts",
+    elevenlabs_voice_id: str | None = None,
 ) -> TTSResult:
     """Generate TTS audio and word-boundary timing from *script*.
 
@@ -68,8 +74,10 @@ async def generate_tts(
         script: The text to synthesise.
         output_dir: Directory to write `voiceover.mp3` and `word_boundaries.json`.
         voice: edge-tts voice name (see `edge-tts --list-voices`).
-        rate: Speech rate modifier e.g. "+10%" or "-5%".
+        rate: Speech rate modifier e.g. "+5%" or "-5%".
         max_duration_sec: Reject audio longer than this many seconds.
+        provider: "edge-tts" (free) or "elevenlabs" (Zack D Films style/clone).
+        elevenlabs_voice_id: Voice ID if using ElevenLabs.
 
     Returns:
         A :class:`TTSResult` with paths and metadata.
@@ -83,9 +91,14 @@ async def generate_tts(
     audio_path = output_dir / "voiceover.mp3"
     wb_path = output_dir / "word_boundaries.json"
 
-    logger.info("Generating TTS: voice=%s, rate=%s, words=%d", voice, rate, len(script.split()))
-
-    boundaries = await _synthesise(script, audio_path, voice, rate)
+    eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if provider.lower() == "elevenlabs" and eleven_key:
+        v_id = elevenlabs_voice_id or "pNInz6obpgDQGcFmaJgB"
+        logger.info("Generating TTS with ElevenLabs (voice_id=%s, words=%d)", v_id, len(script.split()))
+        boundaries = await _synthesise_elevenlabs(script, audio_path, v_id, eleven_key)
+    else:
+        logger.info("Generating TTS with Edge-TTS: voice=%s, rate=%s, words=%d", voice, rate, len(script.split()))
+        boundaries = await _synthesise(script, audio_path, voice, rate)
 
     # Validate audio file
     if not audio_path.exists() or audio_path.stat().st_size == 0:
@@ -138,6 +151,73 @@ def load_word_boundaries(wb_path: Path) -> list[WordBoundary]:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+async def _synthesise_elevenlabs(
+    script: str,
+    audio_path: Path,
+    voice_id: str,
+    api_key: str,
+) -> list[WordBoundary]:
+    """Generate audio and word-level timestamps using ElevenLabs with-timestamps API."""
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "text": script,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.85,
+        },
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            raise TTSError(f"ElevenLabs TTS failed ({resp.status_code}): {resp.text}")
+        data = resp.json()
+
+    audio_b64 = data.get("audio_base64")
+    if not audio_b64:
+        raise TTSError("ElevenLabs returned empty audio")
+
+    audio_path.write_bytes(base64.b64decode(audio_b64))
+
+    # Parse character-level alignment into words
+    alignment = data.get("alignment", {})
+    characters = alignment.get("characters", [])
+    start_times = alignment.get("character_start_times_seconds", [])
+    end_times = alignment.get("character_end_times_seconds", [])
+
+    boundaries: list[WordBoundary] = []
+    cur_chars: list[str] = []
+    cur_start: float | None = None
+    cur_end: float | None = None
+
+    for char, start_s, end_s in zip(characters, start_times, end_times):
+        if char.isspace():
+            if cur_chars and cur_start is not None and cur_end is not None:
+                word = "".join(cur_chars)
+                start_ms = cur_start * 1000.0
+                dur_ms = max(50.0, (cur_end - cur_start) * 1000.0)
+                boundaries.append(WordBoundary(word=word, start_ms=start_ms, duration_ms=dur_ms))
+                cur_chars = []
+                cur_start = None
+        else:
+            if cur_start is None:
+                cur_start = start_s
+            cur_end = end_s
+            cur_chars.append(char)
+
+    if cur_chars and cur_start is not None and cur_end is not None:
+        word = "".join(cur_chars)
+        start_ms = cur_start * 1000.0
+        dur_ms = max(50.0, (cur_end - cur_start) * 1000.0)
+        boundaries.append(WordBoundary(word=word, start_ms=start_ms, duration_ms=dur_ms))
+
+    return boundaries
+
 
 @retry_with_backoff(
     exceptions=(EdgeTTSException, asyncio.TimeoutError, ConnectionError),

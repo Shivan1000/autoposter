@@ -69,7 +69,7 @@ class VideoComposer:
         audio_bitrate: str = _AUDIO_BITRATE,
         tail_padding_sec: float = 1.0,
         screenshot_width_fraction: float = 0.92,
-        screenshot_y_fraction: float = 0.08,
+        screenshot_y_fraction: float | str = "middle",
         screenshot_corner_radius: int = 20,
     ) -> None:
         self.background_dir = Path(background_dir)
@@ -223,9 +223,20 @@ class VideoComposer:
         start_offset = random.uniform(0.0, max_offset) if max_offset > 1.0 else 0.0
         logger.debug("Background clip offset: %.2fs", start_offset)
 
-        # Overlay position
+        # Overlay position (support 'middle' / 'center' or numeric fraction)
         overlay_x = int((self.width - int(self.width * self.screenshot_width_fraction)) / 2)
-        overlay_y = int(self.height * self.screenshot_y_fraction)
+        if isinstance(self.screenshot_y_fraction, str) and self.screenshot_y_fraction.lower() in ("middle", "center"):
+            with Image.open(overlay_path) as oimg:
+                overlay_h = oimg.height
+            overlay_y = max(0, int((self.height - overlay_h) / 2))
+        else:
+            try:
+                frac = float(self.screenshot_y_fraction)
+                overlay_y = int(self.height * frac)
+            except (ValueError, TypeError):
+                with Image.open(overlay_path) as oimg:
+                    overlay_h = oimg.height
+                overlay_y = max(0, int((self.height - overlay_h) / 2))
 
         # We use the subtitles filter which reads the .ass file directly.
         # On Windows, backslashes in the path must be escaped for ffmpeg's filter syntax.

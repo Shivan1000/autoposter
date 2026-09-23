@@ -143,14 +143,29 @@ async def run_pipeline(
             # ----------------------------------------------------------------
             # STAGE 4: Text-to-speech
             # ----------------------------------------------------------------
+            # STAGE 4: Text-to-speech
+            # ----------------------------------------------------------------
             stage = "tts"
-            job_logger.info("[Stage 3/7] Generating TTS audio")
+            tts_cfg = cfg.get("tts", {})
+            provider = tts_cfg.get("provider", "edge-tts")
+            voice = tts_cfg.get("voice", "en-US-ChristopherNeural")
+            if tts_cfg.get("rotate_voices", False):
+                pool = tts_cfg.get("voices_pool", [])
+                if pool:
+                    voice = random.choice(pool)
+            rate = tts_cfg.get("rate", "+5%")
+            eleven_cfg = tts_cfg.get("elevenlabs", {})
+            eleven_voice_id = eleven_cfg.get("voice_id", "pNInz6obpgDQGcFmaJgB")
+
+            job_logger.info("[Stage 3/7] Generating TTS audio (provider=%s, voice=%s)", provider, voice)
             tts_result = await generate_tts(
                 script=script,
                 output_dir=tmp.path,
-                voice=cfg.get("tts", {}).get("voice", "en-US-GuyNeural"),
-                rate=cfg.get("tts", {}).get("rate", "+0%"),
-                max_duration_sec=cfg.get("tts", {}).get("max_duration_sec", 60.0),
+                voice=voice,
+                rate=rate,
+                max_duration_sec=tts_cfg.get("max_duration_sec", 60.0),
+                provider=provider,
+                elevenlabs_voice_id=eleven_voice_id,
             )
 
             # ----------------------------------------------------------------
@@ -167,7 +182,7 @@ async def run_pipeline(
                 outline_color=subs_cfg.get("outline_color", "&H00000000"),
                 outline_width=float(subs_cfg.get("outline_width", 5.0)),
                 shadow=float(subs_cfg.get("shadow", 2.0)),
-                margin_v=subs_cfg.get("margin_bottom", 500),
+                margin_v=subs_cfg.get("margin_bottom", 350),
                 margin_l=subs_cfg.get("margin_left", 60),
                 margin_r=subs_cfg.get("margin_right", 60),
                 words_per_chunk=subs_cfg.get("words_per_chunk", 3),
@@ -200,7 +215,7 @@ async def run_pipeline(
                 audio_bitrate=vid_cfg.get("audio_bitrate", "128k"),
                 tail_padding_sec=vid_cfg.get("tail_padding_sec", 1.0),
                 screenshot_width_fraction=vid_cfg.get("screenshot_width_fraction", 0.92),
-                screenshot_y_fraction=vid_cfg.get("screenshot_y_fraction", 0.08),
+                screenshot_y_fraction=vid_cfg.get("screenshot_y_fraction", "middle"),
                 screenshot_corner_radius=vid_cfg.get("screenshot_corner_radius", 20),
             )
             output_path = tmp.subpath("final_reel.mp4")
