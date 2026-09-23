@@ -61,6 +61,7 @@ class RedditPost:
     subreddit: str          # subreddit name without r/
     score: int
     top_comments: list[str] = field(default_factory=list)
+    image_url: Optional[str] = None
     is_nsfw: bool = False
     author: Optional[str] = None
     flair: Optional[str] = None
@@ -183,6 +184,7 @@ class RedditScraper:
             subreddit=subreddit,
             score=selected["score"],
             top_comments=[c["text"] for c in comments],
+            image_url=selected.get("image_url"),
             is_nsfw=selected.get("is_nsfw", False),
             author=selected.get("author", "[unknown]"),
             flair=selected.get("flair"),
@@ -233,10 +235,21 @@ class RedditScraper:
 
             permalink = link.replace("https://www.reddit.com", "")
 
-            # Try to extract score from the content HTML
+            # Try to extract score and image from the content HTML
             score = 0
+            image_url = None
             if content_el is not None and content_el.text:
                 score = self._extract_score_from_content(content_el.text)
+                img_match = re.search(r'href="(https://i\.redd\.it/[^"]+)"', content_el.text)
+                if not img_match:
+                    img_match = re.search(r'src="(https://preview\.redd\.it/[^"]+)"', content_el.text)
+                if not img_match:
+                    img_match = re.search(r'href="(https://[^\s"]+\.(?:jpg|jpeg|png|webp))"', content_el.text)
+                if img_match:
+                    image_url = unescape(img_match.group(1))
+
+            if not image_url and any(link.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
+                image_url = link
 
             # Check for NSFW in category
             is_nsfw = False
@@ -257,6 +270,7 @@ class RedditScraper:
                 "score": score,
                 "is_nsfw": is_nsfw,
                 "author": author,
+                "image_url": image_url,
                 "flair": None,
             })
 
@@ -285,12 +299,26 @@ class RedditScraper:
             page: Page = await context.new_page()
 
             try:
-                # 1. Fetch live top comments from Reddit thread
+                # 1. Fetch live top comments and thread images from Reddit thread
                 post_url = selected.get("url")
                 if post_url:
                     try:
                         resp = await page.goto(post_url, wait_until="domcontentloaded", timeout=12000)
                         if resp and resp.status == 200:
+                            # Check for thread image if not in RSS
+                            if not selected.get("image_url"):
+                                try:
+                                    img_el = await page.query_selector(
+                                        "shreddit-post img[src*='redd.it'], shreddit-media-lightbox img, img[alt*='post image' i]"
+                                    )
+                                    if img_el:
+                                        src = await img_el.get_attribute("src")
+                                        if src and ("redd.it" in src or "imgur" in src):
+                                            selected["image_url"] = src
+                                            logger.info("Found thread image: %s", src[:60])
+                                except Exception:
+                                    pass
+
                             try:
                                 await page.wait_for_selector("shreddit-comment", timeout=6000)
                             except Exception:
@@ -319,10 +347,10 @@ class RedditScraper:
                 selected["comments"] = comments
                 logger.info("Extracted %d comments for post [%s]", len(comments), selected["id"])
 
-                # 2. Render styled card HTML with comments
+                # 2. Render styled card HTML with comments and optional image
                 html = self._build_post_html(selected, subreddit)
-                await page.set_content(html)
-                await page.wait_for_timeout(350)
+                await page.set_content(html, wait_until="networkidle")
+                await page.wait_for_timeout(500)
 
                 # 3. Screenshot ONLY the .card element (transparent background)
                 screenshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -346,6 +374,16 @@ class RedditScraper:
         author = html_mod.escape(selected.get("author", "[unknown]"))
         score_text = f"{selected['score']:,}" if selected["score"] > 0 else "Vote"
         comments_list = selected.get("comments", [])
+
+        # Build image HTML if thread contains an image
+        image_url = selected.get("image_url")
+        image_html = ""
+        if image_url:
+            image_html = f"""
+            <div class="post-image-container">
+                <img src="{image_url}" class="post-image" alt="Thread Image" />
+            </div>
+            """
 
         # Build comments HTML
         comments_html = ""
@@ -445,6 +483,25 @@ class RedditScraper:
             color: #f2f4f5;
             letter-spacing: -0.2px;
         }}
+        .post-image-container {{
+            width: 100%;
+            max-height: 480px;
+            overflow: hidden;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111112;
+            border: 1px solid #2d2d2e;
+        }}
+        .post-image {{
+            width: 100%;
+            height: auto;
+            max-height: 480px;
+            object-fit: contain;
+            border-radius: 10px;
+        }}
         .actions {{
             display: flex;
             gap: 10px;
@@ -540,6 +597,7 @@ class RedditScraper:
             </div>
         </div>
         <div class="title">{title}</div>
+        {image_html}
         <div class="actions">
             <div class="action-btn">
                 <span class="upvote">⬆</span>
