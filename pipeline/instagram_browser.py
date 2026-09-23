@@ -519,6 +519,9 @@ class InstagramBrowserPublisher:
 
         page.on("response", on_response)
 
+        # Force 9:16 vertical aspect ratio (prevent Instagram web from cropping to 1:1 square)
+        await self._set_vertical_aspect_ratio(page)
+
         for _ in range(4):
             await page.wait_for_timeout(1000)
             ok_btn = await page.query_selector('button:has-text("OK"), [role="button"]:has-text("OK")')
@@ -644,6 +647,47 @@ class InstagramBrowserPublisher:
             if "couldn't post" in body or "something went wrong" in body:
                 raise InstagramBrowserError("Instagram reported an error while uploading the reel")
             logger.warning("Upload completion message not explicitly detected, but waited full upload window")
+
+    async def _set_vertical_aspect_ratio(self, page: Page) -> None:
+        """Ensure Instagram web dialog selects 9:16 vertical / Original aspect ratio, not 1:1 square crop."""
+        try:
+            await page.wait_for_timeout(2000)
+            # Find crop/aspect ratio button in the bottom left of upload dialog
+            crop_btn = await page.query_selector(
+                'div[role="dialog"] button:has(svg[aria-label*="crop" i]), '
+                'div[role="dialog"] button:has(svg[aria-label*="Select crop" i]), '
+                'div[role="dialog"] svg[aria-label*="crop" i], '
+                'div[role="dialog"] svg[aria-label*="Select crop" i], '
+                'div[role="dialog"] [aria-label*="Select crop" i]'
+            )
+            if crop_btn and await crop_btn.is_visible():
+                try:
+                    await crop_btn.click(timeout=3000)
+                except Exception:
+                    await crop_btn.click(force=True)
+                await page.wait_for_timeout(1000)
+
+                # Look for 9:16 or Original option
+                ratio_selectors = [
+                    'div[role="dialog"] span:has-text("9:16")',
+                    'div[role="dialog"] [role="button"]:has-text("9:16")',
+                    'div[role="dialog"] span:has-text("Original")',
+                    'div[role="dialog"] [role="button"]:has-text("Original")',
+                    'span:has-text("9:16")',
+                    'span:has-text("Original")',
+                ]
+                for r_sel in ratio_selectors:
+                    ratio_opt = await page.query_selector(r_sel)
+                    if ratio_opt and await ratio_opt.is_visible():
+                        try:
+                            await ratio_opt.click(timeout=3000)
+                        except Exception:
+                            await ratio_opt.click(force=True)
+                        logger.info("Selected 9:16 / Original vertical aspect ratio in Instagram modal")
+                        await page.wait_for_timeout(1000)
+                        break
+        except Exception as exc:
+            logger.debug("Aspect ratio selector check skipped: %s", exc)
 
 
 # ---------------------------------------------------------------------------
