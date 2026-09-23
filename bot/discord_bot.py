@@ -95,8 +95,8 @@ async def _generate_and_send_thread(
     is_followup: bool = False,
 ) -> None:
     """Scrape a random Reddit thread, capture its screenshot, generate script preview, and send to Discord."""
-    funny_subs = ["funny", "tifu", "facepalm", "AskReddit", "me_irl", "wholesomememes"]
-    chosen_sub = subreddit.strip().lstrip("r/").lower() if (subreddit and subreddit.lower() != "random") else random.choice(funny_subs)
+    meme_subs = ["memes", "dankmemes", "me_irl", "wholesomememes", "funny", "comedyheaven", "AdviceAnimals", "MemeEconomy"]
+    chosen_sub = subreddit.strip().lstrip("r/").lower() if (subreddit and subreddit.lower() != "random") else random.choice(meme_subs)
     chosen_tone = tone or "funny"
 
     # Progress message
@@ -254,10 +254,10 @@ async def random_command(
 
 @bot.tree.command(
     name="post",
-    description="Generate and post a fresh Reel to Instagram (default: r/funny)",
+    description="Generate and post a fresh Reel to Instagram (default: r/memes)",
 )
 @app_commands.describe(
-    subreddit="Subreddit name (default: funny, or tifu, facepalm, AskReddit)",
+    subreddit="Subreddit name (default: memes, or dankmemes, me_irl, comedyheaven)",
     tone="Script/caption tone style (default: funny)",
 )
 @app_commands.choices(tone=[
@@ -265,7 +265,7 @@ async def random_command(
 ])
 async def post_command(
     interaction: discord.Interaction,
-    subreddit: str = "funny",
+    subreddit: str = "memes",
     tone: app_commands.Choice[str] | None = None,
 ) -> None:
     """Slash command: post a Reel to Instagram."""
@@ -287,7 +287,7 @@ async def post_command(
     description="Generate a video without uploading to Instagram (test run)",
 )
 @app_commands.describe(
-    subreddit="Subreddit name (default: funny)",
+    subreddit="Subreddit name (default: memes)",
     tone="Script/caption tone style",
 )
 @app_commands.choices(tone=[
@@ -295,7 +295,7 @@ async def post_command(
 ])
 async def dryrun_command(
     interaction: discord.Interaction,
-    subreddit: str = "funny",
+    subreddit: str = "memes",
     tone: app_commands.Choice[str] | None = None,
 ) -> None:
     """Slash command: test render video without publishing."""
@@ -317,7 +317,7 @@ async def dryrun_command(
     description="Generate and post a Reel from a Reddit subreddit",
 )
 @app_commands.describe(
-    subreddit="Subreddit name (without r/), e.g. funny, AskReddit",
+    subreddit="Subreddit name (without r/), e.g. memes, dankmemes",
     tone="Script/caption tone style",
 )
 @app_commands.choices(tone=[
@@ -325,7 +325,7 @@ async def dryrun_command(
 ])
 async def generate(
     interaction: discord.Interaction,
-    subreddit: str = "funny",
+    subreddit: str = "memes",
     tone: app_commands.Choice[str] | None = None,
 ) -> None:
     """Slash command: trigger the full Reddit → Instagram Reels pipeline."""
@@ -362,7 +362,7 @@ async def prefix_thread(ctx: commands.Context, subreddit: str = "random") -> Non
 
 
 @bot.command(name="post")
-async def prefix_post(ctx: commands.Context, subreddit: str = "funny") -> None:
+async def prefix_post(ctx: commands.Context, subreddit: str = "memes") -> None:
     """Text command: !post or ?post [subreddit]"""
     sub = subreddit.strip().lstrip("r/").lower()
     await ctx.send(f"🚀 Starting Reel generation for **r/{sub}** and posting to Instagram...")

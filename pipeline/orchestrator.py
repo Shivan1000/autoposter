@@ -115,10 +115,11 @@ async def run_pipeline(
             screenshot_path = tmp.subpath("screenshot.png")
             scraper = RedditScraper(
                 time_filter=cfg.get("reddit", {}).get("time_filter", "day"),
-                candidate_pool=cfg.get("reddit", {}).get("candidate_pool", 10),
+                candidate_pool=cfg.get("reddit", {}).get("candidate_pool", 15),
                 allow_nsfw=cfg.get("reddit", {}).get("allow_nsfw", False),
                 top_comments_count=cfg.get("reddit", {}).get("top_comments_count", 5),
-                min_score=cfg.get("reddit", {}).get("min_score", 100),
+                min_score=cfg.get("reddit", {}).get("min_score", 50),
+                sort=cfg.get("reddit", {}).get("sort", "random"),
             )
             post: RedditPost = await scraper.fetch_and_screenshot(
                 subreddit, screenshot_path, dedup_store
@@ -219,7 +220,8 @@ async def run_pipeline(
                 screenshot_corner_radius=vid_cfg.get("screenshot_corner_radius", 20),
             )
             output_path = tmp.subpath("final_reel.mp4")
-            composer.compose(
+            await asyncio.to_thread(
+                composer.compose,
                 screenshot_path=screenshot_path,
                 audio_path=tts_result.audio_path,
                 subtitles_path=subtitles_path,

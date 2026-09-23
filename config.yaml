@@ -4,28 +4,32 @@
 # Secrets (API keys, tokens) go in .env — never here.
 # =============================================================
 
-# Subreddits to pull content from (in priority order).
+# Subreddits to pull content from (strictly meme-related).
 # The bot rotates through these or picks based on the /generate command.
 subreddits:
-  - funny
-  - tifu
-  - facepalm
-  - AskReddit
+  - memes
+  - dankmemes
   - me_irl
   - wholesomememes
+  - funny
+  - comedyheaven
+  - AdviceAnimals
+  - MemeEconomy
 
 # ---- Reddit Fetching ----------------------------------------
 reddit:
   # "day" | "week" | "month" | "year" | "all"
   time_filter: day
+  # Sort feed to fetch: "hot" | "top" | "new" | "rising" | "random"
+  sort: random
   # How many posts to consider before picking one (top-N by score)
-  candidate_pool: 10
+  candidate_pool: 15
   # Include NSFW posts? (false = skip them)
   allow_nsfw: false
   # Number of top comments to include in screenshot + script context
   top_comments_count: 5
   # Minimum post score to consider
-  min_score: 100
+  min_score: 50
 
 # ---- Posting ------------------------------------------------
 posting:
@@ -88,8 +92,9 @@ subtitles:
   outline_width: 6
   shadow: 3
   # Vertical position of subtitle block (pixels from bottom)
-  # 420px sits in the clear visual sweet-spot above Instagram's description & audio bar
-  margin_bottom: 420
+  # 360px sits in the middle-bottom sweet-spot: clearly below the centered screenshot
+  # and clearly above Instagram's bottom caption/audio bar
+  margin_bottom: 360
   margin_left: 60
   margin_right: 60
 
@@ -107,7 +112,7 @@ video:
   background_dir: assets/gameplay
   # Screenshot overlay: fraction of frame width
   screenshot_width_fraction: 0.92
-  # Screenshot vertical position: "middle" / "center" or numeric fraction from top (e.g. 0.08)
+  # Screenshot vertical position: "middle" / "center" centers card vertically in the middle
   screenshot_y_fraction: "middle"
   # Corner radius for screenshot overlay (pixels)
   screenshot_corner_radius: 20

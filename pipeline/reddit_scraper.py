@@ -96,16 +96,18 @@ class RedditScraper:
     def __init__(
         self,
         time_filter: str = "day",
-        candidate_pool: int = 10,
+        candidate_pool: int = 15,
         allow_nsfw: bool = False,
         top_comments_count: int = 5,
         min_score: int = 0,
+        sort: str = "random",
     ) -> None:
         self.time_filter = time_filter
         self.candidate_pool = candidate_pool
         self.allow_nsfw = allow_nsfw
         self.top_comments_count = top_comments_count
         self.min_score = min_score
+        self.sort = sort
 
     async def fetch_and_screenshot(
         self,
@@ -127,10 +129,27 @@ class RedditScraper:
             ValueError: If no eligible post is found.
             RedditScraperError: On network errors.
         """
-        logger.info("Fetching posts from r/%s via RSS (time=%s)", subreddit, self.time_filter)
+        # Determine sort mode (hot, top, new, rising, best)
+        import random
+        sort_options = ["hot", "top", "rising", "new"]
+        if self.sort == "random":
+            chosen_sort = random.choice(sort_options)
+        elif self.sort in sort_options:
+            chosen_sort = self.sort
+        else:
+            chosen_sort = "hot"
 
-        # Step 1: Fetch and parse RSS feed
-        candidates = await self._fetch_rss(subreddit)
+        time_filters = ["day", "week", "month", "all"]
+        chosen_time = random.choice(time_filters) if self.time_filter == "random" else self.time_filter
+
+        logger.info("Fetching posts from r/%s (sort=%s, time=%s)", subreddit, chosen_sort, chosen_time)
+
+        # Step 1: Fetch and parse RSS feed (with fallback across sorts if needed)
+        candidates = await self._fetch_rss(subreddit, sort_mode=chosen_sort, time_filter=chosen_time)
+        if not candidates and chosen_sort != "hot":
+            logger.info("Retrying r/%s with sort=hot", subreddit)
+            candidates = await self._fetch_rss(subreddit, sort_mode="hot", time_filter="day")
+
         logger.info("Found %d candidates from RSS feed", len(candidates))
 
         if not candidates:
@@ -151,7 +170,7 @@ class RedditScraper:
 
         if selected is None:
             raise ValueError(
-                f"No eligible posts found in r/{subreddit} with time_filter='{self.time_filter}'. "
+                f"No eligible posts found in r/{subreddit} (sort='{chosen_sort}', time='{chosen_time}'). "
                 "All candidates were filtered (already posted, or title too short)."
             )
 
@@ -199,9 +218,18 @@ class RedditScraper:
         max_attempts=3,
         wait_min=2.0,
     )
-    async def _fetch_rss(self, subreddit: str) -> list[dict]:
+    async def _fetch_rss(
+        self,
+        subreddit: str,
+        sort_mode: str = "hot",
+        time_filter: str = "day",
+    ) -> list[dict]:
         """Fetch and parse the public Reddit RSS feed for a subreddit."""
-        url = f"https://www.reddit.com/r/{subreddit}/top.rss?t={self.time_filter}&limit=25"
+        if sort_mode == "top":
+            url = f"https://www.reddit.com/r/{subreddit}/top.rss?t={time_filter}&limit=25"
+        else:
+            url = f"https://www.reddit.com/r/{subreddit}/{sort_mode}.rss?limit=25"
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         }
