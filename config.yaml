@@ -30,6 +30,8 @@ reddit:
   top_comments_count: 5
   # Minimum post score to consider
   min_score: 50
+  # Only select posts with images/memes attached
+  require_images: true
 
 # ---- Posting ------------------------------------------------
 posting:

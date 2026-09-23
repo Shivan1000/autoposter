@@ -116,14 +116,14 @@ async def _generate_and_send_thread(
         msg = await interaction_or_ctx.send(embed=loading_embed)
 
     try:
-        scraper = RedditScraper(time_filter="day", candidate_pool=15, allow_nsfw=False)
+        scraper = RedditScraper(time_filter="day", candidate_pool=20, allow_nsfw=False, require_images=True)
         temp_dir = Path("tmp") / "bot_threads"
         temp_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = temp_dir / f"card_{uuid.uuid4().hex[:8]}.png"
 
         post = await scraper.fetch_and_screenshot(chosen_sub, screenshot_path, bot.dedup_store)
 
-        # Generate script preview
+        # Generate script preview (strictly focused on meme title and visual)
         script_writer = ScriptWriter()
         script = await script_writer.generate(post, tone=chosen_tone)
         words = len(script.split())
@@ -141,17 +141,9 @@ async def _generate_and_send_thread(
             color=discord.Color.from_rgb(255, 69, 0),  # Reddit Orange
         )
 
-        # Attach Screenshot
+        # Attach Screenshot (Clean meme card without comments)
         file = discord.File(str(screenshot_path.resolve()), filename="card.png")
         embed.set_image(url="attachment://card.png")
-
-        # Top Comment
-        if post.top_comments:
-            embed.add_field(
-                name="💬 Featured Top Comment",
-                value=f"> {post.top_comments[0][:300]}",
-                inline=False,
-            )
 
         # Voiceover Preview
         embed.add_field(

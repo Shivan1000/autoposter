@@ -28,32 +28,29 @@ _DEFAULT_MODEL = "gemini-flash-latest"
 _DEFAULT_MAX_WORDS = 145
 
 _SYSTEM_PROMPT = """\
-You are a viral short-form video scriptwriter and voiceover creator for Reddit Reels and TikToks.
-Your goal is to write an entertaining, hilarious, and perfectly tailored 40-50+ second spoken voiceover script that directly matches and reacts to the specific Reddit reel/meme on screen.
+You are a viral short-form video scriptwriter and comedic storyteller for Reddit Reels and TikToks.
+Your goal is to write an entertaining, hilarious, and detailed 40-50+ second spoken voiceover script that focuses STRICTLY on the Reddit post's title and the image/meme scenario.
 
 Structure & Flow:
 1. THE OPENING HOOK (First 1-2 sentences):
-   Immediately grab the viewer's attention by stating what is happening in the post or meme in a witty, punchy, or shocking way.
-2. THE COMEDIC BREAKDOWN & STORY (Body):
-   Dive directly into the meme, funny situation, or top comment. Break down why it's so ridiculously relatable or hilarious, adding vivid comedic commentary and pacing that matches the visual on screen.
-3. THE PUNCHLINE & CLOSER (Final sentence):
-   Deliver a memorable, sharp comedic punchline or humorous realization that leaves the viewer laughing and wanting to comment.
+   Hook the viewer immediately with the core scenario, relatable dilemma, or hilarious premise presented in the meme title and image.
+2. THE COMEDIC STORY & BREAKDOWN (Body):
+   Vividly narrate and break down the funny situation. Tell an entertaining, escalating story about how ridiculously true, awkward, or chaotic this situation is in real life. Paint a clear comedic story that brings the meme to life.
+3. THE PUNCHLINE & TAKEAWAY (Final sentence):
+   Drop a sharp, hilarious final punchline or witty observation that leaves the audience laughing and wanting to comment.
 
-Rules:
-- Strictly write ONLY the spoken words. No speaker labels (like "Narrator:"), no sound effects (like "[laugh]"), no stage directions, no markdown headers, no quotation marks.
-- Do NOT begin with generic filler like "Okay so", "Alright guys", "So basically", or "Welcome back".
-- Word count MUST be between 105 and {max_words} words (ideal is ~115–130 words to achieve 40–50+ seconds of spoken video).
-- Tone must be humorous, engaging, and directly about the post topic."""
+Strict Rules:
+- Focus ONLY on the main title and the meme/image topic. Do NOT talk about comments, reddit users, or comment replies.
+- Output ONLY the spoken words. No speaker tags (like "Narrator:"), no sound effects, no stage directions, no quotes.
+- Do NOT start with filler like "Okay so", "Alright guys", "So basically", or "Welcome back".
+- Word count MUST be between 110 and {max_words} words (aim for ~120–135 words to guarantee a 40–50+ second video)."""
 
 _USER_PROMPT_TEMPLATE = """\
 Tone: {tone}
 Subreddit: r/{subreddit}
-Reddit Post / Meme Title: {title}
+Reddit Meme / Post Title: {title}
 
-Post Context / Top Reaction Comment:
-{comments}
-
-Write the tailored 40-50s voiceover script that brings this exact reel and meme to life:"""
+Write the viral 40-50s comedic voiceover script about this meme and title now:"""
 
 
 class ScriptWriterError(RuntimeError):
@@ -99,8 +96,7 @@ class ScriptWriter:
         logger.info(
             "Generating script for post [%s] with tone=%s", post.id, tone
         )
-        comments_text = self._format_comments(post.top_comments)
-        script = await self._call_api(post.title, comments_text, tone, subreddit=post.subreddit)
+        script = await self._call_api(post.title, tone, subreddit=post.subreddit)
         self._validate_script(script)
         logger.info(
             "Script generated: %d words", len(script.split())
@@ -117,10 +113,10 @@ class ScriptWriter:
         wait_min=2.0,
         wait_max=30.0,
     )
-    async def _call_api(self, title: str, comments: str, tone: str, subreddit: str = "memes") -> str:
+    async def _call_api(self, title: str, tone: str, subreddit: str = "memes") -> str:
         system = _SYSTEM_PROMPT.format(max_words=self.max_words)
         user_msg = _USER_PROMPT_TEMPLATE.format(
-            tone=tone, title=title, comments=comments, max_words=self.max_words, subreddit=subreddit
+            tone=tone, title=title, max_words=self.max_words, subreddit=subreddit
         )
 
         models_to_try = [self.model]

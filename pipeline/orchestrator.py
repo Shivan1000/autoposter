@@ -120,6 +120,7 @@ async def run_pipeline(
                 top_comments_count=cfg.get("reddit", {}).get("top_comments_count", 5),
                 min_score=cfg.get("reddit", {}).get("min_score", 50),
                 sort=cfg.get("reddit", {}).get("sort", "random"),
+                require_images=cfg.get("reddit", {}).get("require_images", True),
             )
             post: RedditPost = await scraper.fetch_and_screenshot(
                 subreddit, screenshot_path, dedup_store

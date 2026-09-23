@@ -101,6 +101,7 @@ class RedditScraper:
         top_comments_count: int = 5,
         min_score: int = 0,
         sort: str = "random",
+        require_images: bool = True,
     ) -> None:
         self.time_filter = time_filter
         self.candidate_pool = candidate_pool
@@ -108,6 +109,7 @@ class RedditScraper:
         self.top_comments_count = top_comments_count
         self.min_score = min_score
         self.sort = sort
+        self.require_images = require_images
 
     async def fetch_and_screenshot(
         self,
@@ -396,12 +398,11 @@ class RedditScraper:
 
     @staticmethod
     def _build_post_html(selected: dict, subreddit: str) -> str:
-        """Build a Reddit-style post card as HTML with top comments."""
+        """Build a clean Reddit-style post card as HTML with title and meme image."""
         import html as html_mod
         title = html_mod.escape(selected["title"])
         author = html_mod.escape(selected.get("author", "[unknown]"))
-        score_text = f"{selected['score']:,}" if selected["score"] > 0 else "Vote"
-        comments_list = selected.get("comments", [])
+        score_text = f"{selected['score']:,}" if selected["score"] > 0 else "14.2k"
 
         # Build image HTML if thread contains an image
         image_url = selected.get("image_url")
@@ -409,44 +410,10 @@ class RedditScraper:
         if image_url:
             image_html = f"""
             <div class="post-image-container">
-                <img src="{image_url}" class="post-image" alt="Thread Image" />
+                <img src="{image_url}" class="post-image" alt="Meme Image" />
             </div>
             """
 
-        # Build comments HTML
-        comments_html = ""
-        if comments_list:
-            comment_items = []
-            avatar_colors = ["#ff4500", "#0079d3", "#46d160", "#7193ff", "#ffb000", "#9b51e0"]
-            for i, c in enumerate(comments_list[:1]):  # show single top comment
-                c_author = html_mod.escape(c["author"])
-                c_text = html_mod.escape(c["text"])
-                color = avatar_colors[i % len(avatar_colors)]
-                initial = (c_author[0].upper() if c_author else "U")
-                badge_html = '<span class="comment-badge">TOP COMMENT</span>' if i == 0 else ''
-                upvotes = f"{1420 - i * 380:,}"
-                comment_items.append(f"""
-                <div class="comment">
-                    <div class="comment-header">
-                        <div class="user-avatar" style="background: {color};">{initial}</div>
-                        <span class="comment-author">u/{c_author}</span>
-                        {badge_html}
-                        <span class="comment-time">• {i + 2}h ago</span>
-                    </div>
-                    <div class="comment-body">{c_text}</div>
-                    <div class="comment-footer">
-                        <span class="comment-upvote">⬆ {upvotes} ⬇</span>
-                        <span class="comment-reply">Reply</span>
-                    </div>
-                </div>
-                """)
-            comments_html = f"""
-            <div class="comments-section">
-                {''.join(comment_items)}
-            </div>
-            """
-
-        comments_count_display = f"{len(comments_list)} " if comments_list else ""
         return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -468,7 +435,7 @@ class RedditScraper:
             border-radius: 16px;
             padding: 16px 18px;
             width: 640px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75);
         }}
         .header {{
             display: flex;
@@ -507,16 +474,16 @@ class RedditScraper:
             font-size: 18px;
             font-weight: 600;
             line-height: 1.3;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             color: #f2f4f5;
             letter-spacing: -0.2px;
         }}
         .post-image-container {{
             width: 100%;
-            max-height: 320px;
+            max-height: 360px;
             overflow: hidden;
             border-radius: 10px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -526,7 +493,7 @@ class RedditScraper:
         .post-image {{
             width: 100%;
             height: auto;
-            max-height: 320px;
+            max-height: 360px;
             object-fit: contain;
             border-radius: 8px;
         }}
@@ -534,8 +501,6 @@ class RedditScraper:
             display: flex;
             gap: 8px;
             align-items: center;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #2d2d2e;
         }}
         .action-btn {{
             display: flex;
@@ -543,76 +508,12 @@ class RedditScraper:
             gap: 5px;
             background: #272729;
             border-radius: 16px;
-            padding: 4px 10px;
+            padding: 5px 12px;
             font-size: 11px;
             color: #818384;
             font-weight: 600;
         }}
         .upvote {{ color: #ff4500; font-weight: bold; }}
-        .comments-section {{
-            margin-top: 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }}
-        .comment {{
-            background: #212123;
-            border-left: 3px solid #ff4500;
-            border-radius: 10px;
-            padding: 12px 14px;
-        }}
-        .comment-header {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 6px;
-        }}
-        .user-avatar {{
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: bold;
-            color: white;
-            flex-shrink: 0;
-        }}
-        .comment-author {{
-            font-size: 13px;
-            font-weight: 700;
-            color: #d7dadc;
-        }}
-        .comment-badge {{
-            background: rgba(255, 69, 0, 0.2);
-            color: #ff6b35;
-            font-size: 10px;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 4px;
-            letter-spacing: 0.5px;
-        }}
-        .comment-time {{
-            font-size: 11px;
-            color: #818384;
-        }}
-        .comment-body {{
-            font-size: 14px;
-            line-height: 1.4;
-            color: #d7dadc;
-            margin-bottom: 8px;
-        }}
-        .comment-footer {{
-            display: flex;
-            gap: 12px;
-            font-size: 11px;
-            color: #818384;
-            font-weight: 600;
-        }}
-        .comment-upvote {{
-            color: #ff4500;
-        }}
     </style>
 </head>
 <body>
@@ -621,7 +522,7 @@ class RedditScraper:
             <div class="subreddit-icon">r/</div>
             <div class="header-text">
                 <span class="subreddit-name">r/{subreddit}</span>
-                <span class="post-meta">Posted by u/{author} • 6h ago</span>
+                <span class="post-meta">Posted by u/{author} • 4h ago</span>
             </div>
         </div>
         <div class="title">{title}</div>
@@ -632,10 +533,9 @@ class RedditScraper:
                 <span>{score_text}</span>
                 <span>⬇</span>
             </div>
-            <div class="action-btn">💬 {comments_count_display}Comments</div>
+            <div class="action-btn">💬 524 Comments</div>
             <div class="action-btn">↗ Share</div>
         </div>
-        {comments_html}
     </div>
 </body>
 </html>"""
@@ -646,11 +546,13 @@ class RedditScraper:
 
     async def _should_skip(self, candidate: dict, dedup_store: DedupStore) -> Optional[str]:
         """Return a skip reason string, or None if the post is eligible."""
+        if self.require_images and not candidate.get("image_url"):
+            return "no image attached (image required)"
         if candidate.get("is_nsfw") and not self.allow_nsfw:
             return "NSFW"
         if await dedup_store.is_processed(candidate["id"]):
             return "already posted"
-        if len(candidate["title"].split()) < 5:
+        if len(candidate["title"].split()) < 3:
             return "title too short for scripting"
         return None
 
