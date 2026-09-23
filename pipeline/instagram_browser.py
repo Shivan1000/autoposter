@@ -186,7 +186,10 @@ class InstagramBrowserPublisher:
                 # Step 6: Save session for next time
                 _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
                 await context.storage_state(path=str(_SESSION_FILE))
-                logger.info("Instagram session saved for future use")
+                detected_user = await self._detect_current_username(page)
+                if detected_user:
+                    self._username = detected_user
+                    logger.info("Detected active Instagram profile: @%s", self._username)
 
                 ig_user = self._username.strip()
                 profile_link = f"https://www.instagram.com/{ig_user}/" if ig_user else "https://www.instagram.com/"
@@ -213,6 +216,31 @@ class InstagramBrowserPublisher:
             finally:
                 await context.close()
                 await browser.close()
+
+    async def _detect_current_username(self, page: Page) -> str:
+        """Dynamically detect the username of the active Instagram session."""
+        try:
+            detected = await page.evaluate("""() => {
+                const links = Array.from(document.querySelectorAll('a[href^="/"]'));
+                for (const link of links) {
+                    const href = link.getAttribute('href') || '';
+                    const hasProfile = link.querySelector('img[alt*="profile picture" i]') || 
+                                       link.querySelector('svg[aria-label*="Profile" i]') || 
+                                       link.innerText.trim().toLowerCase() === 'profile';
+                    if (hasProfile && href.length > 2) {
+                        const parts = href.split('/').filter(Boolean);
+                        if (parts.length === 1 && !['explore', 'reels', 'direct', 'stories', 'accounts', 'your_activity'].includes(parts[0])) {
+                            return parts[0];
+                        }
+                    }
+                }
+                return '';
+            }""")
+            if detected:
+                return detected
+        except Exception:
+            pass
+        return self._username or ""
 
     # ------------------------------------------------------------------
     # Login
