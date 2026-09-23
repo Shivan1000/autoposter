@@ -48,10 +48,159 @@ _EMBED_COLOR_INFO = discord.Color.from_rgb(88, 101, 242)  # Discord blurple
 _START_TIME = datetime.now(timezone.utc)
 
 
+import random
+import uuid
+from pathlib import Path
+from pipeline.reddit_scraper import RedditScraper
+from pipeline.script_writer import ScriptWriter
+from pipeline.caption_generator import CaptionGenerator
+
+class ThreadPreviewView(discord.ui.View):
+    """Interactive view for generated Reddit thread previews."""
+    def __init__(self, subreddit: str, tone: str, post_title: str):
+        super().__init__(timeout=600)
+        self.subreddit = subreddit
+        self.tone = tone
+        self.post_title = post_title
+
+    @discord.ui.button(label="🎬 Post Reel to Instagram", style=discord.ButtonStyle.success, emoji="🚀")
+    async def post_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        await interaction.followup.send(
+            embed=_build_progress_embed(self.subreddit, self.tone, stage="🚀 Creating 40+ second Reel & publishing to Instagram…"),
+            ephemeral=False,
+        )
+        asyncio.create_task(
+            _run_pipeline_and_report(interaction, self.subreddit, self.tone, dry_run=False, is_followup=True)
+        )
+
+    @discord.ui.button(label="🎲 Another Thread", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def another_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.response.edit_message(view=self)
+        except Exception:
+            pass
+        await _generate_and_send_thread(interaction, subreddit=None, tone=self.tone, is_followup=True)
+
+
+async def _generate_and_send_thread(
+    interaction_or_ctx,
+    subreddit: str | None = None,
+    tone: str | None = None,
+    is_followup: bool = False,
+) -> None:
+    """Scrape a random Reddit thread, capture its screenshot, generate script preview, and send to Discord."""
+    funny_subs = ["funny", "tifu", "facepalm", "AskReddit", "me_irl", "wholesomememes"]
+    chosen_sub = subreddit.strip().lstrip("r/").lower() if (subreddit and subreddit.lower() != "random") else random.choice(funny_subs)
+    chosen_tone = tone or "funny"
+
+    # Progress message
+    loading_embed = discord.Embed(
+        title=f"🔍 Fetching Random Thread from r/{chosen_sub}...",
+        description="⏳ Scraping post, capturing image card, and writing AI voiceover preview…",
+        color=_EMBED_COLOR_INFO,
+    )
+
+    msg = None
+    if hasattr(interaction_or_ctx, "response"):
+        if is_followup:
+            msg = await interaction_or_ctx.followup.send(embed=loading_embed)
+        elif not interaction_or_ctx.response.is_done():
+            await interaction_or_ctx.response.send_message(embed=loading_embed)
+    else:
+        msg = await interaction_or_ctx.send(embed=loading_embed)
+
+    try:
+        scraper = RedditScraper(time_filter="day", candidate_pool=15, allow_nsfw=False)
+        temp_dir = Path("tmp") / "bot_threads"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = temp_dir / f"card_{uuid.uuid4().hex[:8]}.png"
+
+        post = await scraper.fetch_and_screenshot(chosen_sub, screenshot_path, bot.dedup_store)
+
+        # Generate script preview
+        script_writer = ScriptWriter()
+        script = await script_writer.generate(post, tone=chosen_tone)
+        words = len(script.split())
+        est_sec = round(words / 2.4, 1)
+
+        # Generate caption preview
+        cap_gen = CaptionGenerator()
+        caption_obj = await cap_gen.generate(post, script, tone=chosen_tone)
+
+        # Build Rich Discord Embed
+        embed = discord.Embed(
+            title=f"📌 r/{chosen_sub} — {post.title[:100]}",
+            url=post.url,
+            description=f"**Author**: u/{post.author or 'reddit_user'} • **Score**: {post.score:,}\n🔗 [Open Reddit Thread]({post.url})",
+            color=discord.Color.from_rgb(255, 69, 0),  # Reddit Orange
+        )
+
+        # Attach Screenshot
+        file = discord.File(str(screenshot_path.resolve()), filename="card.png")
+        embed.set_image(url="attachment://card.png")
+
+        # Top Comment
+        if post.top_comments:
+            embed.add_field(
+                name="💬 Featured Top Comment",
+                value=f"> {post.top_comments[0][:300]}",
+                inline=False,
+            )
+
+        # Voiceover Preview
+        embed.add_field(
+            name=f"🎙️ AI Narration Script ({words} words • ~{est_sec}s Reel)",
+            value=f"```\n{script[:600]}\n```",
+            inline=False,
+        )
+
+        # Instagram Caption Preview
+        embed.add_field(
+            name="📱 Viral Instagram Caption & Tags",
+            value=f"{caption_obj.text[:300]}\n\n*{' '.join(caption_obj.hashtags[:6])}*",
+            inline=False,
+        )
+
+        embed.set_footer(text="Click 'Post Reel to Instagram' below to automatically create and publish this Reel!")
+
+        view = ThreadPreviewView(chosen_sub, chosen_tone, post.title)
+
+        if hasattr(interaction_or_ctx, "response"):
+            if is_followup:
+                await interaction_or_ctx.followup.send(embed=embed, file=file, view=view)
+            else:
+                await interaction_or_ctx.edit_original_response(embed=embed, attachments=[file], view=view)
+        else:
+            if msg:
+                await msg.delete()
+            await interaction_or_ctx.send(embed=embed, file=file, view=view)
+
+    except Exception as exc:
+        logger.exception("Error generating random thread: %s", exc)
+        err_embed = discord.Embed(
+            title="❌ Could Not Fetch Thread",
+            description=f"Failed to fetch from r/{chosen_sub}:\n```{exc}```",
+            color=_EMBED_COLOR_FAILURE,
+        )
+        if hasattr(interaction_or_ctx, "response"):
+            if is_followup:
+                await interaction_or_ctx.followup.send(embed=err_embed)
+            else:
+                await interaction_or_ctx.edit_original_response(embed=err_embed)
+        else:
+            await interaction_or_ctx.send(embed=err_embed)
+
+
 class AutoposterBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix=["!", "?"], intents=intents)
         self.dedup_store = DedupStore()
 
     async def setup_hook(self) -> None:
@@ -64,8 +213,44 @@ bot = AutoposterBot()
 
 
 # ---------------------------------------------------------------------------
-# /generate command
+# Slash Commands
 # ---------------------------------------------------------------------------
+
+@bot.tree.command(
+    name="thread",
+    description="🎲 Generate a random Reddit thread with screenshot card, script & caption preview",
+)
+@app_commands.describe(
+    subreddit="Subreddit name (default: random funny subreddit, or specify e.g. funny, tifu, facepalm)",
+    tone="Tone style (default: funny)",
+)
+@app_commands.choices(tone=[
+    app_commands.Choice(name=t, value=t) for t in _VALID_TONES
+])
+async def thread_command(
+    interaction: discord.Interaction,
+    subreddit: str | None = None,
+    tone: app_commands.Choice[str] | None = None,
+) -> None:
+    """Generate and send a random Reddit thread preview to Discord."""
+    tone_value = tone.value if tone else "funny"
+    await _generate_and_send_thread(interaction, subreddit=subreddit, tone=tone_value)
+
+
+@bot.tree.command(
+    name="random",
+    description="🎲 Pick a random trending Reddit thread and preview it in Discord",
+)
+@app_commands.describe(
+    subreddit="Subreddit name (default: random funny subreddit)",
+)
+async def random_command(
+    interaction: discord.Interaction,
+    subreddit: str | None = None,
+) -> None:
+    """Shortcut to get a random thread preview."""
+    await _generate_and_send_thread(interaction, subreddit=subreddit, tone="funny")
+
 
 @bot.tree.command(
     name="post",
@@ -166,17 +351,41 @@ async def generate(
     )
 
 
+# ---------------------------------------------------------------------------
+# Text Prefix Commands (!thread, ?thread, !post, ?post, !random)
+# ---------------------------------------------------------------------------
+
+@bot.command(name="thread", aliases=["random", "getthread"])
+async def prefix_thread(ctx: commands.Context, subreddit: str = "random") -> None:
+    """Text command: !thread or ?thread [subreddit]"""
+    await _generate_and_send_thread(ctx, subreddit=subreddit, tone="funny")
+
+
+@bot.command(name="post")
+async def prefix_post(ctx: commands.Context, subreddit: str = "funny") -> None:
+    """Text command: !post or ?post [subreddit]"""
+    sub = subreddit.strip().lstrip("r/").lower()
+    await ctx.send(f"🚀 Starting Reel generation for **r/{sub}** and posting to Instagram...")
+    result = await run_pipeline(sub, tone="funny", dry_run=False)
+    embed = _build_result_embed(result)
+    await ctx.send(embed=embed)
+
+
 async def _run_pipeline_and_report(
     interaction: discord.Interaction,
     subreddit: str,
     tone: str | None,
     dry_run: bool = False,
+    is_followup: bool = False,
 ) -> None:
     """Run the pipeline and update the Discord message with the result."""
     try:
         result = await run_pipeline(subreddit, tone=tone, dry_run=dry_run)
         embed = _build_result_embed(result)
-        await interaction.edit_original_response(embed=embed)
+        if is_followup:
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.edit_original_response(embed=embed)
     except Exception as exc:
         logger.exception("Unhandled error in pipeline task")
         error_embed = discord.Embed(
@@ -185,7 +394,10 @@ async def _run_pipeline_and_report(
             color=_EMBED_COLOR_FAILURE,
         )
         try:
-            await interaction.edit_original_response(embed=error_embed)
+            if is_followup:
+                await interaction.followup.send(embed=error_embed)
+            else:
+                await interaction.edit_original_response(embed=error_embed)
         except Exception:
             pass
 
