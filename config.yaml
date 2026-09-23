@@ -37,8 +37,8 @@ posting:
 
 # ---- TTS / Audio --------------------------------------------
 tts:
-  # Provider: "edge-tts" (100% free) or "elevenlabs" (for real Zack D. Films voice clone)
-  provider: edge-tts
+  # Provider: "elevenlabs" (using your API key) or "edge-tts" (100% free)
+  provider: elevenlabs
 
   # Voice name.
   # For Zack D. Films style (deep, authoritative, fast-paced):
