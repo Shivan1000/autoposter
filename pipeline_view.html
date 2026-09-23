@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autoposter — Pipeline Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a2e;
+            --bg-card-hover: #222240;
+            --border: #2a2a45;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888aa;
+            --text-muted: #555570;
+            --accent-reddit: #ff4500;
+            --accent-script: #a855f7;
+            --accent-tts: #3b82f6;
+            --accent-subtitle: #06b6d4;
+            --accent-caption: #f59e0b;
+            --accent-video: #10b981;
+            --accent-instagram: #e1306c;
+            --glow-size: 80px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Header ───────────────────────── */
+        .header {
+            text-align: center;
+            padding: 60px 20px 30px;
+            position: relative;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 300px;
+            background: radial-gradient(ellipse, rgba(168, 85, 247, 0.12) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .header h1 {
+            font-size: 42px;
+            font-weight: 900;
+            letter-spacing: -1.5px;
+            background: linear-gradient(135deg, #a855f7, #3b82f6, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 400;
+            max-width: 500px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* ── Pipeline Flow ────────────────── */
+        .pipeline-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 30px 20px;
+            flex-wrap: wrap;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+            position: relative;
+        }
+
+        .flow-step:hover {
+            transform: translateY(-2px);
+            border-color: var(--step-color);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .flow-step.active {
+            border-color: var(--step-color);
+            box-shadow: 0 0 20px color-mix(in srgb, var(--step-color) 30%, transparent);
+        }
+
+        .flow-step .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--step-color);
+            flex-shrink: 0;
+        }
+
+        .flow-step.active .dot {
+            animation: pulse-dot 1.5s ease infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--step-color) 50%, transparent); }
+            50% { box-shadow: 0 0 0 6px transparent; }
+        }
+
+        .flow-arrow {
+            color: var(--text-muted);
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        /* ── Tab Content ──────────────────── */
+        .tab-container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        .tab-panel {
+            display: none;
+            animation: fadeSlideIn 0.4s ease;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .stage-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .stage-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--step-color), transparent);
+        }
+
+        .stage-header {
+            padding: 28px 32px 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        .stage-number {
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            background: color-mix(in srgb, var(--step-color) 15%, transparent);
+            border: 1px solid color-mix(in srgb, var(--step-color) 30%, transparent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--step-color);
+            flex-shrink: 0;
+        }
+
+        .stage-info h2 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+
+        .stage-info .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .stage-body {
+            padding: 24px 32px 28px;
+        }
+
+        /* ── Details Grid ─────────────────── */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-top: 8px;
+        }
+
+        .detail-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .detail-item .label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .detail-item .value {
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .detail-item .value code {
+            background: rgba(168, 85, 247, 0.15);
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #c084fc;
+        }
+
+        .detail-item.full {
+            grid-column: 1 / -1;
+        }
+
+        /* ── Flow Diagram ─────────────────── */
+        .io-flow {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 16px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            flex-wrap: wrap;
+        }
+
+        .io-box {
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .io-box.input {
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            color: #60a5fa;
+        }
+
+        .io-box.output {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            color: #34d399;
+        }
+
+        .io-box.process {
+            background: rgba(168, 85, 247, 0.12);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            color: #c084fc;
+        }
+
+        .io-arrow {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        /* ── Status Bar ───────────────────── */
+        .status-bar {
+            max-width: 900px;
+            margin: 30px auto 60px;
+            padding: 0 20px;
+        }
+
+        .status-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px 28px;
+        }
+
+        .status-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--text-secondary);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            font-size: 13px;
+        }
+
+        .status-icon {
+            font-size: 18px;
+        }
+
+        .status-item .name {
+            color: var(--text-secondary);
+        }
+
+        .status-item .state {
+            margin-left: auto;
+            font-weight: 600;
+            font-size: 12px;
+            padding: 3px 10px;
+            border-radius: 6px;
+        }
+
+        .state.done {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+
+        .state.needed {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+        }
+
+        .state.free {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+        }
+
+        /* ── Responsive ───────────────────── */
+        @media (max-width: 640px) {
+            .header h1 { font-size: 28px; }
+            .detail-grid { grid-template-columns: 1fr; }
+            .stage-header { padding: 20px 20px 0; }
+            .stage-body { padding: 20px; }
+            .flow-step { font-size: 11px; padding: 6px 12px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>⚡ Autoposter Pipeline</h1>
+        <p>Reddit → Video → Instagram Reel<br>Fully automated, runs on your PC</p>
+    </div>
+
+    <!-- ── Pipeline Flow Nav ── -->
+    <div class="pipeline-flow" id="pipelineFlow">
+        <div class="flow-step active" data-tab="0" style="--step-color: var(--accent-reddit)">
+            <span class="dot"></span> Reddit Fetch
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" data-tab="1" style="--step-color: var(--accent-script)">
+            <span class="dot"></span> Script
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" data-tab="2" style="--step-color: var(--accent-tts)">
+            <span class="dot"></span> TTS Audio
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" data-tab="3" style="--step-color: var(--accent-subtitle)">
+            <span class="dot"></span> Subtitles
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" data-tab="4" style="--step-color: var(--accent-caption)">
+            <span class="dot"></span> Caption
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" data-tab="5" style="--step-color: var(--accent-video)">
+            <span class="dot"></span> Video
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-step" data-tab="6" style="--step-color: var(--accent-instagram)">
+            <span class="dot"></span> Instagram
+        </div>
+    </div>
+
+    <!-- ── Tab Panels ── -->
+    <div class="tab-container">
+
+        <!-- Stage 1: Reddit -->
+        <div class="tab-panel active" id="tab-0">
+            <div class="stage-card" style="--step-color: var(--accent-reddit)">
+                <div class="stage-header">
+                    <div class="stage-number">1</div>
+                    <div class="stage-info">
+                        <h2>Reddit Fetch + Screenshot</h2>
+                        <div class="subtitle">Fetches trending posts via RSS feed and generates a dark-mode Reddit card screenshot. No API keys needed.</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">📡 RSS Feed</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🔍 Parse & Filter</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🎨 Render HTML Card</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">📸 screenshot.png</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="label">Source</div>
+                            <div class="value"><code>reddit.com/r/*/top.rss</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">API Keys</div>
+                            <div class="value">None needed ✅</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/reddit_scraper.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Output</div>
+                            <div class="value">RedditPost dataclass + PNG screenshot</div>
+                        </div>
+                        <div class="detail-item full">
+                            <div class="label">How It Works</div>
+                            <div class="value">Fetches Reddit's public RSS feed → parses Atom XML → filters out NSFW/duplicates → renders a styled dark-mode post card using Playwright HTML → saves as PNG</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 2: Script -->
+        <div class="tab-panel" id="tab-1">
+            <div class="stage-card" style="--step-color: var(--accent-script)">
+                <div class="stage-header">
+                    <div class="stage-number">2</div>
+                    <div class="stage-info">
+                        <h2>Voiceover Script</h2>
+                        <div class="subtitle">Claude AI writes a punchy 30-45 second voiceover script from the Reddit post. Matches the chosen tone (funny, dramatic, etc).</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">📝 Post Title</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🤖 Claude AI</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">🎙️ Script Text</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="label">AI Model</div>
+                            <div class="value"><code>claude-3-5-haiku</code> (fast + cheap)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Cost</div>
+                            <div class="value">~$0.002 per script (~$5 for 2000+ videos)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/script_writer.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Max Words</div>
+                            <div class="value">130 words (~45 seconds spoken)</div>
+                        </div>
+                        <div class="detail-item full">
+                            <div class="label">Tone Presets</div>
+                            <div class="value">funny • dramatic • curious • shocked • unhinged — randomly picked or set via Discord</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 3: TTS -->
+        <div class="tab-panel" id="tab-2">
+            <div class="stage-card" style="--step-color: var(--accent-tts)">
+                <div class="stage-header">
+                    <div class="stage-number">3</div>
+                    <div class="stage-info">
+                        <h2>Text-to-Speech</h2>
+                        <div class="subtitle">Converts the script into natural-sounding speech using Microsoft Edge TTS. Free, no API key needed. Also generates word-level timestamps for subtitle sync.</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">🎙️ Script Text</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🔊 Edge TTS</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">🎵 audio.mp3</div>
+                        <span class="io-arrow">+</span>
+                        <div class="io-box output">⏱️ word_boundaries.json</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="label">Engine</div>
+                            <div class="value"><code>edge-tts</code> (Microsoft Neural TTS)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Cost</div>
+                            <div class="value">Completely free ✅</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/tts_engine.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Default Voice</div>
+                            <div class="value"><code>en-US-GuyNeural</code></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 4: Subtitles -->
+        <div class="tab-panel" id="tab-3">
+            <div class="stage-card" style="--step-color: var(--accent-subtitle)">
+                <div class="stage-header">
+                    <div class="stage-number">4</div>
+                    <div class="stage-info">
+                        <h2>Subtitle Builder</h2>
+                        <div class="subtitle">Creates word-by-word animated subtitles from TTS timestamps. Styled with bold fonts and outlines for the vertical video format.</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">⏱️ Word Timestamps</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">✂️ Chunk Words</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">📄 subtitles.ass</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="label">Format</div>
+                            <div class="value"><code>.ass</code> (Advanced SubStation Alpha)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Words per Chunk</div>
+                            <div class="value">4 words (short = more dynamic)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/subtitle_builder.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Style</div>
+                            <div class="value">Arial Black, 52pt, white + black outline</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 5: Caption -->
+        <div class="tab-panel" id="tab-4">
+            <div class="stage-card" style="--step-color: var(--accent-caption)">
+                <div class="stage-header">
+                    <div class="stage-number">5</div>
+                    <div class="stage-info">
+                        <h2>Instagram Caption</h2>
+                        <div class="subtitle">Claude AI generates a viral caption with a hook + hashtags. Optimized for Instagram engagement.</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">📝 Post + Script</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🤖 Claude AI</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">✍️ Caption + #Hashtags</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item full">
+                            <div class="label">Example Output</div>
+                            <div class="value">"The Box Office Metric Hollywood Doesn't Want You To Use 🤔 #movies #film #cinema #reddit #askreddit"</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/caption_generator.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Cost</div>
+                            <div class="value">~$0.001 per caption</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 6: Video -->
+        <div class="tab-panel" id="tab-5">
+            <div class="stage-card" style="--step-color: var(--accent-video)">
+                <div class="stage-header">
+                    <div class="stage-number">6</div>
+                    <div class="stage-info">
+                        <h2>Video Composer</h2>
+                        <div class="subtitle">FFmpeg layers everything together: gameplay background + screenshot overlay + TTS audio + animated subtitles → final 9:16 vertical Reel.</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">🎮 Gameplay.mp4</div>
+                        <span class="io-arrow">+</span>
+                        <div class="io-box input">📸 Screenshot</div>
+                        <span class="io-arrow">+</span>
+                        <div class="io-box input">🎵 Audio</div>
+                        <span class="io-arrow">+</span>
+                        <div class="io-box input">📄 Subs</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">🎬 final_reel.mp4</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="label">Resolution</div>
+                            <div class="value">1080 × 1920 (9:16 vertical)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Engine</div>
+                            <div class="value"><code>FFmpeg</code> (installed locally)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/video_composer.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Gameplay Source</div>
+                            <div class="value"><code>assets/gameplay/*.mp4</code></div>
+                        </div>
+                        <div class="detail-item full">
+                            <div class="label">Layout</div>
+                            <div class="value">Screenshot at top (92% width, rounded corners) • Gameplay fills background • Subtitles at bottom center</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 7: Instagram -->
+        <div class="tab-panel" id="tab-6">
+            <div class="stage-card" style="--step-color: var(--accent-instagram)">
+                <div class="stage-header">
+                    <div class="stage-number">7</div>
+                    <div class="stage-info">
+                        <h2>Instagram Upload</h2>
+                        <div class="subtitle">Playwright opens a real browser, logs into your Instagram, and uploads the Reel directly. No API keys, no cloud hosting needed.</div>
+                    </div>
+                </div>
+                <div class="stage-body">
+                    <div class="io-flow">
+                        <div class="io-box input">🎬 final_reel.mp4</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🌐 Open Chrome</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">🔑 Login (saved session)</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box process">📤 Upload</div>
+                        <span class="io-arrow">→</span>
+                        <div class="io-box output">📱 Live Reel!</div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="label">Method</div>
+                            <div class="value">Browser automation (Playwright)</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">API Keys</div>
+                            <div class="value">None — just your IG login ✅</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">File</div>
+                            <div class="value"><code>pipeline/instagram_browser.py</code></div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="label">Session</div>
+                            <div class="value">Saved after first login (auto re-use)</div>
+                        </div>
+                        <div class="detail-item full">
+                            <div class="label">First Run</div>
+                            <div class="value">Browser opens visibly → you may need to handle 2FA → session is saved → subsequent runs are fully automatic</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── Status Bar ── -->
+    <div class="status-bar">
+        <div class="status-card">
+            <h3>📋 Setup Checklist</h3>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-icon">🐍</span>
+                    <span class="name">Python 3.10</span>
+                    <span class="state done">Done</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">🎥</span>
+                    <span class="name">FFmpeg</span>
+                    <span class="state done">Done</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">📦</span>
+                    <span class="name">Pip Packages</span>
+                    <span class="state done">Done</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">🌐</span>
+                    <span class="name">Chromium</span>
+                    <span class="state done">Done</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">🤖</span>
+                    <span class="name">Discord Bot</span>
+                    <span class="state done">Done</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">🧠</span>
+                    <span class="name">Anthropic Key</span>
+                    <span class="state needed">Needed</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">📸</span>
+                    <span class="name">IG Login</span>
+                    <span class="state needed">Needed</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">🎮</span>
+                    <span class="name">Gameplay .mp4</span>
+                    <span class="state needed">Needed</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        const steps = document.querySelectorAll('.flow-step');
+        const panels = document.querySelectorAll('.tab-panel');
+
+        steps.forEach(step => {
+            step.addEventListener('click', () => {
+                const tabIndex = step.dataset.tab;
+
+                // Update active step
+                steps.forEach(s => s.classList.remove('active'));
+                step.classList.add('active');
+
+                // Update active panel
+                panels.forEach(p => p.classList.remove('active'));
+                document.getElementById(`tab-${tabIndex}`).classList.add('active');
+            });
+        });
+
+        // Auto-advance animation on load
+        let currentStep = 0;
+        const autoAdvance = setInterval(() => {
+            currentStep++;
+            if (currentStep >= steps.length) {
+                clearInterval(autoAdvance);
+                return;
+            }
+            steps[currentStep].click();
+        }, 2500);
+
+        // Stop auto-advance on manual click
+        document.querySelector('.pipeline-flow').addEventListener('click', () => {
+            clearInterval(autoAdvance);
+        });
+    </script>
+
+</body>
+</html>

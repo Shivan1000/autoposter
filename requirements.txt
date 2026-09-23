@@ -1,0 +1,46 @@
+# autoposter — Python dependencies
+# Install with: pip install -r requirements.txt
+# Requires Python 3.11+
+
+# ---- Discord bot ----------------------------------------
+discord.py>=2.4.0
+
+# ---- Reddit API -----------------------------------------
+praw>=7.7.0
+prawcore>=2.4.0
+
+# ---- Web automation (screenshot) ------------------------
+playwright>=1.44.0
+# After installing: python -m playwright install chromium
+
+# ---- Text-to-speech -------------------------------------
+edge-tts>=6.1.9
+
+# ---- AI / LLM -------------------------------------------
+anthropic>=0.30.0
+
+# ---- Video processing -----------------------------------
+ffmpeg-python>=0.2.0
+Pillow>=10.3.0
+
+# ---- HTTP client ----------------------------------------
+httpx>=0.27.0
+
+# ---- Cloud storage (video hosting) ----------------------
+boto3>=1.34.0          # For Cloudflare R2 (S3-compatible) and AWS S3
+
+# ---- Database -------------------------------------------
+aiosqlite>=0.20.0
+
+# ---- Config and environment -----------------------------
+python-dotenv>=1.0.0
+PyYAML>=6.0.1
+
+# ---- Retry logic ----------------------------------------
+tenacity>=8.3.0
+
+# ---- Scheduler (optional, for auto-posting) -------------
+APScheduler>=3.10.4
+
+# ---- Gameplay downloader (optional) ---------------------
+yt-dlp>=2024.5.0

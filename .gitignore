@@ -1,0 +1,41 @@
+# autoposter — .gitignore
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+*.egg
+
+# Data / State
+data/dedup.db
+data/*.db
+
+# Logs
+logs/
+
+# Temp job dirs
+tmp/
+
+# Generated assets (keep placeholder)
+assets/gameplay/*
+!assets/gameplay/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.iml

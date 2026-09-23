@@ -1,0 +1,123 @@
+# =============================================================
+# autoposter — config.yaml
+# All non-secret runtime configuration lives here.
+# Secrets (API keys, tokens) go in .env — never here.
+# =============================================================
+
+# Subreddits to pull content from (in priority order).
+# The bot rotates through these or picks based on the /generate command.
+subreddits:
+  - AskReddit
+  - tifu
+  - AmItheAsshole
+  - MaliciousCompliance
+  - PublicFreakout
+
+# ---- Reddit Fetching ----------------------------------------
+reddit:
+  # "day" | "week" | "month" | "year" | "all"
+  time_filter: day
+  # How many posts to consider before picking one (top-N by score)
+  candidate_pool: 10
+  # Include NSFW posts? (false = skip them)
+  allow_nsfw: false
+  # Number of top comments to include in screenshot + script context
+  top_comments_count: 5
+  # Minimum post score to consider
+  min_score: 100
+
+# ---- Posting ------------------------------------------------
+posting:
+  # Minimum minutes between posts (prevents spam)
+  cooldown_minutes: 60
+  # APScheduler: post automatically every N hours (0 = disabled, Discord-only)
+  auto_post_interval_hours: 0
+  # Subreddit to use for auto-posts (picks from list above if blank)
+  auto_post_subreddit: ""
+
+# ---- TTS / Audio --------------------------------------------
+tts:
+  # Any valid edge-tts voice name.
+  # List available: `edge-tts --list-voices`
+  voice: en-US-GuyNeural
+  # Voice speed offset (e.g. "+10%" or "-5%")
+  rate: "+0%"
+  # Max word count for the spoken script (keeps video ≤ ~45s)
+  max_words: 130
+  # Hard upper limit on generated audio duration (seconds)
+  max_duration_sec: 60
+
+# ---- Subtitles ----------------------------------------------
+subtitles:
+  # Words per subtitle chunk (3 words = dynamic & punchy)
+  words_per_chunk: 3
+  font_name: Arial Black
+  font_size: 78
+  primary_color: "&H00FFFFFF"   # white
+  outline_color: "&H00000000"   # black outline
+  outline_width: 5
+  shadow: 2
+  # Vertical position of subtitle block (pixels from bottom)
+  margin_bottom: 500
+  margin_left: 60
+  margin_right: 60
+
+# ---- Video Composition --------------------------------------
+video:
+  width: 1080
+  height: 1920
+  fps: 30
+  # libx264 CRF (18=lossless quality, 28=smallest file; 23 is a good default)
+  crf: 23
+  audio_bitrate: 128k
+  # Seconds of extra video padding after voiceover ends
+  tail_padding_sec: 1.0
+  # Gameplay clips directory (relative to project root)
+  background_dir: assets/gameplay
+  # Screenshot overlay: fraction of frame width
+  screenshot_width_fraction: 0.92
+  # Screenshot vertical position: fraction from top of frame
+  screenshot_y_fraction: 0.08
+  # Corner radius for screenshot overlay (pixels)
+  screenshot_corner_radius: 20
+
+# ---- LLM (Google Gemini - Free) -----------------------------
+llm:
+  # Model for script generation (Gemini Flash = fast + free)
+  script_model: gemini-flash-latest
+  # Model for caption generation
+  caption_model: gemini-flash-latest
+  max_tokens: 1500
+  temperature: 1.0
+  # Tone presets — one is chosen randomly each run unless overridden via Discord
+  tone_presets:
+    - funny
+    - dramatic
+    - curious
+    - shocked
+    - unhinged
+
+# ---- Instagram / Graph API ----------------------------------
+instagram:
+  # Polling interval (seconds) while waiting for container status
+  status_poll_interval_sec: 5
+  # Max time (seconds) to wait for container to reach FINISHED
+  status_poll_timeout_sec: 300
+  # Delete video from temp host after successful publish
+  cleanup_after_publish: true
+  # Warn if access token expires within this many days
+  token_expiry_warning_days: 7
+
+# ---- Storage ------------------------------------------------
+storage:
+  # SQLite DB path (relative to project root)
+  db_path: data/dedup.db
+
+# ---- Logging ------------------------------------------------
+logging:
+  # Log directory (relative to project root)
+  log_dir: logs
+  log_filename: autoposter.log
+  # Max log file size in bytes before rotation
+  max_bytes: 10485760   # 10 MB
+  backup_count: 5
