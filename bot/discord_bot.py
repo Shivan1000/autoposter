@@ -264,9 +264,10 @@ async def post_command(
     subreddit = subreddit.strip().lstrip("r/").lower()
     tone_value = tone.value if tone else "funny"
 
-    await interaction.response.send_message(
+    # defer() shows Discord's "thinking..." indicator and keeps the token alive
+    await interaction.response.defer(ephemeral=False)
+    await interaction.followup.send(
         embed=_build_progress_embed(subreddit, tone_value, stage="🚀 Starting Reel generation pipeline…"),
-        ephemeral=False,
     )
 
     asyncio.create_task(
@@ -294,9 +295,9 @@ async def dryrun_command(
     subreddit = subreddit.strip().lstrip("r/").lower()
     tone_value = tone.value if tone else "funny"
 
-    await interaction.response.send_message(
+    await interaction.response.defer(ephemeral=False)
+    await interaction.followup.send(
         embed=_build_progress_embed(subreddit, tone_value, stage="🧪 Rendering test Reel (dry-run)…"),
-        ephemeral=False,
     )
 
     asyncio.create_task(
@@ -331,10 +332,10 @@ async def generate(
 
     tone_value = tone.value if tone else None
 
-    # Acknowledge immediately — pipeline takes time
-    await interaction.response.send_message(
+    # defer() immediately — pipeline takes time
+    await interaction.response.defer(ephemeral=False)
+    await interaction.followup.send(
         embed=_build_progress_embed(subreddit, tone_value, stage="Starting…"),
-        ephemeral=False,
     )
 
     # Run pipeline in background
@@ -368,30 +369,24 @@ async def _run_pipeline_and_report(
     subreddit: str,
     tone: str | None,
     dry_run: bool = False,
-    is_followup: bool = False,
+    is_followup: bool = True,  # Always followup now (commands use defer+followup)
 ) -> None:
-    """Run the pipeline and update the Discord message with the result."""
+    """Run the pipeline and send the result back via followup (works after defer)."""
     try:
         result = await run_pipeline(subreddit, tone=tone, dry_run=dry_run)
         embed = _build_result_embed(result)
-        if is_followup:
-            await interaction.followup.send(embed=embed)
-        else:
-            await interaction.edit_original_response(embed=embed)
+        await interaction.followup.send(embed=embed)
     except Exception as exc:
         logger.exception("Unhandled error in pipeline task")
         error_embed = discord.Embed(
-            title="💥 Critical Error",
-            description=f"An unexpected error prevented the pipeline from running:\n```{exc}```",
+            title="💥 Pipeline Failed",
+            description=f"Something went wrong:\n```{exc}```",
             color=_EMBED_COLOR_FAILURE,
         )
         try:
-            if is_followup:
-                await interaction.followup.send(embed=error_embed)
-            else:
-                await interaction.edit_original_response(embed=error_embed)
-        except Exception:
-            pass
+            await interaction.followup.send(embed=error_embed)
+        except Exception as inner:
+            logger.warning("Could not send error followup to Discord: %s", inner)
 
 
 # ---------------------------------------------------------------------------
