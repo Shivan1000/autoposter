@@ -7,11 +7,12 @@
 # Subreddits to pull content from (in priority order).
 # The bot rotates through these or picks based on the /generate command.
 subreddits:
-  - AskReddit
+  - funny
   - tifu
-  - AmItheAsshole
-  - MaliciousCompliance
-  - PublicFreakout
+  - facepalm
+  - AskReddit
+  - me_irl
+  - wholesomememes
 
 # ---- Reddit Fetching ----------------------------------------
 reddit:
@@ -63,10 +64,10 @@ tts:
 
   # Voice speed offset (Zack D. talks fast: +5% to +10% recommended)
   rate: "+5%"
-  # Max word count for the spoken script (keeps video ≤ ~45s)
-  max_words: 130
+  # Max word count for the spoken script (~110-140 words creates a 40-55s video)
+  max_words: 145
   # Hard upper limit on generated audio duration (seconds)
-  max_duration_sec: 60
+  max_duration_sec: 75
 
   # ElevenLabs configuration (optional - set ELEVENLABS_API_KEY in .env)
   elevenlabs:
@@ -119,16 +120,18 @@ llm:
   caption_model: gemini-flash-latest
   max_tokens: 1500
   temperature: 1.0
-  # Tone presets — one is chosen randomly each run unless overridden via Discord
+  # Tone presets — focused on funny and viral comedy
   tone_presets:
     - funny
-    - dramatic
-    - curious
-    - shocked
-    - unhinged
+    - hilarious
+    - humorous
+    - unhinged_funny
+    - sarcastic
 
 # ---- Instagram / Graph API ----------------------------------
 instagram:
+  # Launch visible browser for login and posting
+  headless: false
   # Polling interval (seconds) while waiting for container status
   status_poll_interval_sec: 5
   # Max time (seconds) to wait for container to reach FINISHED

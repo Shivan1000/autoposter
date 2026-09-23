@@ -26,26 +26,35 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL = "gemini-flash-latest"
 
 _SYSTEM_PROMPT = """\
-You are a viral Instagram content strategist who writes punchy, engaging captions \
-for Reels. Your captions are short (1–3 sentences max), hook the viewer immediately, \
-and end with a call-to-action or a twist. You also provide 3–5 hyper-relevant hashtags.
+You are a top-tier viral Instagram Reels content strategist in 2026.
+Your captions are engineered to stop the scroll, maximize watch time, and drive huge comment engagement.
 
-You must respond ONLY in this exact format — no extra text, no markdown:
-CAPTION: <the caption text>
-HASHTAGS: #tag1 #tag2 #tag3 #tag4 #tag5"""
+Structure your caption in 3 parts:
+1. THE VIRAL HOOK (First line): A bold, curious, or shocking one-liner (e.g. "Wait until you see how this ended... 💀👇", "Bro thought nobody would notice 😭💀", "This sounds completely unreal until you realize it's 100% true 👇").
+2. THE HIGHLIGHT (1-2 sentences): A hilarious, punchy summary of the wildest part of the story.
+3. ENGAGEMENT CTA (Final line): A direct, conversation-starting question (e.g. "What would you have done in this situation? Drop your thoughts below 👇💬" or "Tag a friend who would definitely do this 😭👇").
+4. HASHTAGS: 6-8 trending high-volume hashtags combining viral tags with niche tags (e.g. #trending #viralreels #redditstories #reddit #funnyreels #storytime #fyp #explorepage).
+
+Format your response strictly as:
+CAPTION: <the complete caption text with hook, highlight, and CTA>
+HASHTAGS: #tag1 #tag2 #tag3 #tag4 #tag5 #tag6 #tag7 #tag8"""
 
 _USER_PROMPT_TEMPLATE = """\
 Tone: {tone}
 
 Reddit post title: {title}
 
-Script summary (what the voiceover covers):
+Script summary:
 {script_excerpt}
 
-Generate the Instagram caption and hashtags now."""
+Generate the viral trendy Instagram caption and hashtags now:"""
 
 _TONE_OPENERS = {
     "funny": "🤣",
+    "hilarious": "💀",
+    "humorous": "😂",
+    "unhinged_funny": "😭💀",
+    "sarcastic": "🙃",
     "dramatic": "😱",
     "curious": "🤔",
     "shocked": "😳",
@@ -65,9 +74,14 @@ class Caption:
     def full_caption(self) -> str:
         """Combined title + caption + hashtags ready for Instagram."""
         tags = " ".join(self.hashtags)
+        parts = []
         if self.title:
-            return f"{self.title}\n\n{self.text}\n\n{tags}"
-        return f"{self.text}\n\n{tags}"
+            parts.append(f"📌 {self.title}")
+        if self.text:
+            parts.append(self.text)
+        if tags:
+            parts.append(tags)
+        return "\n\n".join(parts)
 
 
 class CaptionGeneratorError(RuntimeError):
