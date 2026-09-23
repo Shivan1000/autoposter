@@ -44,37 +44,25 @@ posting:
 
 # ---- TTS / Audio --------------------------------------------
 tts:
-  # Provider: "edge-tts" (100% free, fast, high quality)
-  provider: edge-tts
+  # Provider: "fish-audio" | "edge-tts" | "elevenlabs"
+  provider: fish-audio
 
-  # Locked Voice: Zack D. Films style (deep, authoritative, fast-paced storytelling)
+  # Fallback Voice if API key runs out of credit:
   voice: en-US-ChristopherNeural
 
   # Strictly use only this single voice (no rotating other voices)
   rotate_voices: false
 
-  # Pool of voices used when rotate_voices is true
-  voices_pool:
-    - en-US-ChristopherNeural
-    - en-US-BrianNeural
-    - en-US-GuyNeural
-    - en-US-AndrewMultilingualNeural
-    - en-US-EricNeural
+  # Fish.Audio configuration (set FISH_AUDIO_API_KEY in .env)
+  fish_audio:
+    voice_id: "c494e0005f3544f3b1bf98c6ffb4c645"
 
-  # Voice speed offset (Zack D. talks fast: +5% to +10% recommended)
+  # Voice speed offset
   rate: "+5%"
   # Max word count for the spoken script (~110-140 words creates a 40-55s video)
   max_words: 145
   # Hard upper limit on generated audio duration (seconds)
   max_duration_sec: 75
-
-  # ElevenLabs configuration (optional - set ELEVENLABS_API_KEY in .env)
-  elevenlabs:
-    # Zack D. Films / requested voice ID
-    voice_id: "UgBBYS2sOqTuMpoF3BR0"
-    model_id: "eleven_multilingual_v2"
-    stability: 0.5
-    similarity_boost: 0.85
 
 # ---- Subtitles ----------------------------------------------
 subtitles:

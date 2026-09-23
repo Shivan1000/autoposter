@@ -91,8 +91,18 @@ async def generate_tts(
     audio_path = output_dir / "voiceover.mp3"
     wb_path = output_dir / "word_boundaries.json"
 
-    eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
-    if provider.lower() == "elevenlabs" and eleven_key:
+    fish_key = os.getenv("FISH_AUDIO_API_KEY", "").strip()
+    fish_voice = os.getenv("FISH_AUDIO_VOICE_ID", "").strip() or "c494e0005f3544f3b1bf98c6ffb4c645"
+
+    if provider.lower() in ("fish-audio", "fish_audio", "fish") and fish_key:
+        logger.info("Generating TTS with Fish.Audio (voice_id=%s, words=%d)", fish_voice, len(script.split()))
+        try:
+            boundaries = await _synthesise_fish_audio(script, audio_path, fish_voice, fish_key)
+        except TTSError as exc:
+            logger.warning("Fish.Audio generation failed (%s). Falling back to voice: %s", exc, voice)
+            boundaries = await _synthesise(script, audio_path, voice, rate)
+    elif provider.lower() == "elevenlabs" and os.getenv("ELEVENLABS_API_KEY"):
+        eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
         v_id = elevenlabs_voice_id or "UgBBYS2sOqTuMpoF3BR0"
         logger.info("Generating TTS with ElevenLabs (voice_id=%s, words=%d)", v_id, len(script.split()))
         try:
@@ -281,6 +291,50 @@ async def _synthesise(
         raise TTSError("edge-tts returned no audio data")
 
     audio_path.write_bytes(b"".join(audio_chunks))
+    return boundaries
+
+
+async def _synthesise_fish_audio(
+    script: str,
+    audio_path: Path,
+    reference_id: str,
+    api_key: str,
+) -> list[WordBoundary]:
+    """Synthesise speech using Fish Audio (https://fish.audio) API."""
+    url = "https://api.fish.audio/v1/tts"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "text": script,
+        "reference_id": reference_id,
+        "format": "mp3",
+        "normalize": True,
+        "latency": "normal",
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code != 200:
+            raise TTSError(f"Fish.Audio TTS failed ({resp.status_code}): {resp.text}")
+        audio_path.write_bytes(resp.content)
+
+    duration_sec = _probe_audio_duration(audio_path)
+    words = script.split()
+    if not words or duration_sec <= 0:
+        return []
+
+    total_chars = sum(len(w) for w in words)
+    current_ms = 0.0
+    total_ms = duration_sec * 1000.0
+    boundaries: list[WordBoundary] = []
+
+    for w in words:
+        fraction = len(w) / max(1, total_chars)
+        word_dur_ms = fraction * total_ms
+        boundaries.append(WordBoundary(word=w, start_ms=current_ms, duration_ms=word_dur_ms))
+        current_ms += word_dur_ms
+
     return boundaries
 
 
