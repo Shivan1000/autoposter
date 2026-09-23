@@ -181,7 +181,7 @@ class InstagramBrowserPublisher:
 
                 # Step 5: Go through the next steps and add caption
                 logger.info("[%s] Adding caption and publishing...", job_id)
-                await self._add_caption_and_publish(page, caption)
+                await self._add_caption_and_publish(page, caption, job_id=job_id)
 
                 # Step 6: Save session for next time
                 _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -476,8 +476,19 @@ class InstagramBrowserPublisher:
         logger.info("Video file selected, waiting for upload processing...")
         await page.wait_for_timeout(5000)
 
-    async def _add_caption_and_publish(self, page: Page, caption: str) -> None:
+    async def _add_caption_and_publish(self, page: Page, caption: str, job_id: str = "") -> None:
         """Navigate through the post creation flow, add caption, and publish."""
+        # Set up network listener for Instagram upload configure endpoint
+        upload_done_event = asyncio.Event()
+
+        def on_response(resp):
+            if any(ep in resp.url for ep in ["configure_to_clips", "configure", "upload_finish"]):
+                if resp.status == 200:
+                    logger.info("[%s] Instagram media configure API responded with HTTP 200 OK", job_id)
+                    upload_done_event.set()
+
+        page.on("response", on_response)
+
         for _ in range(4):
             await page.wait_for_timeout(1000)
             ok_btn = await page.query_selector('button:has-text("OK"), [role="button"]:has-text("OK")')
@@ -485,13 +496,13 @@ class InstagramBrowserPublisher:
                 await ok_btn.click(force=True)
                 await page.wait_for_timeout(1000)
 
-            # Check if caption field is already visible
-            caption_check = await page.query_selector('div[role="textbox"], textarea')
+            # Check if caption field is already visible inside dialog
+            caption_check = await page.query_selector('div[role="dialog"] div[role="textbox"], div[role="dialog"] textarea')
             if caption_check and await caption_check.is_visible():
                 break
 
             next_btn = await page.query_selector(
-                'button:has-text("Next"), div[role="button"]:has-text("Next"), [role="button"]:has-text("Next"), span:has-text("Next")'
+                'div[role="dialog"] button:has-text("Next"), div[role="dialog"] div[role="button"]:has-text("Next"), div[role="dialog"] [role="button"]:has-text("Next"), div[role="dialog"] span:has-text("Next")'
             )
             if next_btn and await next_btn.is_visible():
                 try:
@@ -502,13 +513,13 @@ class InstagramBrowserPublisher:
             else:
                 break
 
-        # Look for caption/textarea
+        # Look for caption/textarea strictly inside dialog
         caption_selectors = [
-            'div[aria-label*="caption" i]',
-            'div[role="textbox"]',
-            'textarea[aria-label*="caption" i]',
-            'textarea[placeholder*="caption" i]',
-            'textarea',
+            'div[role="dialog"] div[aria-label*="caption" i]',
+            'div[role="dialog"] div[role="textbox"]',
+            'div[role="dialog"] textarea[aria-label*="caption" i]',
+            'div[role="dialog"] textarea[placeholder*="caption" i]',
+            'div[role="dialog"] textarea',
         ]
 
         caption_input = None
@@ -530,13 +541,19 @@ class InstagramBrowserPublisher:
 
         await page.wait_for_timeout(2000)
 
-        # Click "Share" or "Post" button
+        # Check if discard prompt appeared accidentally
+        cancel_btn = await page.query_selector('button:has-text("Cancel")')
+        if cancel_btn and await cancel_btn.is_visible():
+            await cancel_btn.click(force=True)
+            await page.wait_for_timeout(1000)
+
+        # Click "Share" button strictly inside the create dialog header
         share_selectors = [
-            'button:has-text("Share")',
-            'div[role="button"]:has-text("Share")',
-            '[role="button"]:has-text("Share")',
-            'button:has-text("Post")',
-            'button:has-text("Publish")',
+            'div[role="dialog"] div[role="button"]:has-text("Share")',
+            'div[role="dialog"] button:has-text("Share")',
+            'div[role="dialog"] [role="button"]:has-text("Share")',
+            'div[role="dialog"] span:has-text("Share")',
+            'div[role="dialog"] div:has-text("Share")',
         ]
 
         shared = False
@@ -552,19 +569,51 @@ class InstagramBrowserPublisher:
 
         if not shared:
             raise InstagramBrowserError(
-                "Could not find Share/Post button to publish the reel"
+                "Could not find Share/Post button in dialog to publish the reel"
             )
 
         # Wait for upload to complete
-        logger.info("Waiting for reel to finish uploading...")
-        for _ in range(40):
-            await page.wait_for_timeout(2000)
-            body = await page.evaluate("() => document.body.innerText")
-            if "shared" in body.lower() or "your reel" in body.lower() or "your post has been shared" in body.lower():
-                logger.info("✅ Reel published successfully!")
-                return
+        logger.info("Waiting for reel to finish uploading (this can take 30-60 seconds)...")
+        upload_confirmed = False
+        for i in range(45):
+            if upload_done_event.is_set():
+                logger.info("✅ Reel published successfully (confirmed by Instagram server response)!")
+                upload_confirmed = True
+                await page.wait_for_timeout(4000)
+                break
 
-        logger.info("Upload wait finished — reel should be posted")
+            await page.wait_for_timeout(2000)
+            body = await page.evaluate("() => document.body.innerText.toLowerCase()")
+            
+            # Check for exact success phrases
+            if "your reel has been shared" in body or "your post has been shared" in body:
+                logger.info("✅ Reel published successfully (found confirmation message)!")
+                upload_confirmed = True
+                break
+
+            # Also check if modal has a checkmark or success header
+            success_heading = await page.query_selector('span:has-text("Your reel has been shared"), span:has-text("Your post has been shared")')
+            if success_heading and await success_heading.is_visible():
+                logger.info("✅ Reel published successfully (found success heading)!")
+                upload_confirmed = True
+                break
+
+            if i % 5 == 0:
+                logger.info("Still uploading... (%ds elapsed)", (i + 1) * 2)
+
+        # Capture confirmation screenshot
+        confirm_path = Path("tmp") / f"upload_confirm_{job_id or 'latest'}.png"
+        try:
+            await page.screenshot(path=str(confirm_path))
+            logger.info("Confirmation screenshot saved: %s", confirm_path)
+        except Exception:
+            pass
+
+        if not upload_confirmed:
+            body = await page.evaluate("() => document.body.innerText.toLowerCase()")
+            if "couldn't post" in body or "something went wrong" in body:
+                raise InstagramBrowserError("Instagram reported an error while uploading the reel")
+            logger.warning("Upload completion message not explicitly detected, but waited full upload window")
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +639,7 @@ if __name__ == "__main__":
             caption="Test post from autoposter 🚀 #reddit #askreddit",
             job_id="test",
         )
-        print(f"\nResult: {'✅ SUCCESS' if result.success else '❌ FAILED'}")
+        print(f"\nResult: {'SUCCESS' if result.success else 'FAILED'}")
         if result.error_message:
             print(f"Error: {result.error_message}")
 
