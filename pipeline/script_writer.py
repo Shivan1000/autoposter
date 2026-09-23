@@ -28,28 +28,29 @@ _DEFAULT_MODEL = "gemini-flash-latest"
 _DEFAULT_MAX_WORDS = 130
 
 _SYSTEM_PROMPT = """\
-You are a viral short-form video scriptwriter. You write punchy, engaging \
-voiceover scripts for Reddit-based content videos. Your scripts are conversational, \
-hook the viewer in the first 5 words, and are perfectly paced for a 30–45 second read-aloud.
+You are a viral short-form video scriptwriter for Reddit Reels and TikToks.
+Your video follows this exact 2-part structure:
+1. THE MAIN TITLE HOOK (First 1-2 sentences):
+   Hook the viewer by stating the Reddit post's question or scenario in an intriguing, punchy way.
+2. THE SINGLE COMMENT STORY (Remaining sentences):
+   Tell the specific story or reply given in the top comment. Retell it vividly, humorously, or dramatically as a single coherent narrative.
 
 Rules:
-- Write ONLY the spoken script. No stage directions, no headers, no quotation marks wrapping the whole thing.
-- Do NOT start with "Okay so", "Alright", or "So basically".
-- Match the requested tone precisely.
-- Length MUST be between 70 and {max_words} words (aim for ~90 words, full story arc with hook, build-up, and payoff). Do not stop prematurely.
-- Use short punchy sentences. Vary sentence length for rhythm.
-- Do not repeat the title verbatim — paraphrase it engagingly.
-- End with a punchy, thought-provoking or funny closer."""
+- You MUST focus strictly on the main title and this SINGLE comment story. Do NOT talk about multiple comments or give generic advice.
+- Write ONLY the spoken words. No stage directions, no speaker tags (like "Narrator:"), no markdown, no quotes wrapping the text.
+- Do NOT start with "Okay so", "Alright guys", or "So basically".
+- Length MUST be between 65 and {max_words} words (aim for ~80–95 words).
+- End with a punchy closer or funny takeaway."""
 
 _USER_PROMPT_TEMPLATE = """\
 Tone: {tone}
 
-Reddit post title: {title}
+Reddit Post Title: {title}
 
-Top comments:
+Featured Single Comment:
 {comments}
 
-Write the complete 70–{max_words} word voiceover script now:"""
+Write the viral voiceover script focusing on this title and this single comment story now:"""
 
 
 class ScriptWriterError(RuntimeError):
@@ -176,10 +177,8 @@ class ScriptWriter:
     def _format_comments(comments: list[str]) -> str:
         if not comments:
             return "(no comments available)"
-        return "\n".join(
-            f"{i + 1}. {comment[:300]}"
-            for i, comment in enumerate(comments)
-        )
+        # Select the single primary comment story
+        return comments[0][:600]
 
     @staticmethod
     def _configure_client() -> None:

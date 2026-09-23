@@ -352,7 +352,7 @@ class RedditScraper:
         if comments_list:
             comment_items = []
             avatar_colors = ["#ff4500", "#0079d3", "#46d160", "#7193ff", "#ffb000", "#9b51e0"]
-            for i, c in enumerate(comments_list[:2]):  # show top 1-2 comments
+            for i, c in enumerate(comments_list[:1]):  # show single top comment
                 c_author = html_mod.escape(c["author"])
                 c_text = html_mod.escape(c["text"])
                 color = avatar_colors[i % len(avatar_colors)]
