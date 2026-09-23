@@ -79,17 +79,17 @@ tts:
 
 # ---- Subtitles ----------------------------------------------
 subtitles:
-  # Words per subtitle chunk (3 words = dynamic & punchy)
+  # Words per subtitle chunk (2-3 words = dynamic & fast-paced)
   words_per_chunk: 3
   font_name: Arial Black
   font_size: 78
-  primary_color: "&H00FFFFFF"   # white
-  outline_color: "&H00000000"   # black outline
-  outline_width: 5
-  shadow: 2
+  primary_color: "&H00FFFFFF"   # bold white
+  outline_color: "&H00000000"   # heavy black outline
+  outline_width: 6
+  shadow: 3
   # Vertical position of subtitle block (pixels from bottom)
-  # 350px leaves clean space below the centered Reddit card & above Reels buttons
-  margin_bottom: 350
+  # 420px sits in the clear visual sweet-spot above Instagram's description & audio bar
+  margin_bottom: 420
   margin_left: 60
   margin_right: 60
 
