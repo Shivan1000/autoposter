@@ -1,0 +1,11 @@
+services:
+  autoposter:
+    build: .
+    container_name: autoposter-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./assets:/app/assets
+      - ./data:/app/data
+      - ./logs:/app/logs
