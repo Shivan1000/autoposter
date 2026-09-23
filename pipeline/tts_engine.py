@@ -93,9 +93,22 @@ async def generate_tts(
 
     eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     if provider.lower() == "elevenlabs" and eleven_key:
-        v_id = elevenlabs_voice_id or "pNInz6obpgDQGcFmaJgB"
+        v_id = elevenlabs_voice_id or "UgBBYS2sOqTuMpoF3BR0"
         logger.info("Generating TTS with ElevenLabs (voice_id=%s, words=%d)", v_id, len(script.split()))
-        boundaries = await _synthesise_elevenlabs(script, audio_path, v_id, eleven_key)
+        try:
+            boundaries = await _synthesise_elevenlabs(script, audio_path, v_id, eleven_key)
+        except TTSError as exc:
+            logger.warning("ElevenLabs generation for voice %s failed: %s", v_id, exc)
+            if "paid_plan_required" in str(exc) or "payment_required" in str(exc):
+                logger.warning("Voice '%s' is a Community Library voice requiring an ElevenLabs Paid Plan. Trying default free voice (Adam)...", v_id)
+                try:
+                    boundaries = await _synthesise_elevenlabs(script, audio_path, "pNInz6obpgDQGcFmaJgB", eleven_key)
+                except Exception as exc2:
+                    logger.warning("ElevenLabs default voice also failed (%s). Falling back to Edge-TTS.", exc2)
+                    boundaries = await _synthesise(script, audio_path, voice, rate)
+            else:
+                logger.warning("Falling back to Edge-TTS: %s", voice)
+                boundaries = await _synthesise(script, audio_path, voice, rate)
     else:
         logger.info("Generating TTS with Edge-TTS: voice=%s, rate=%s, words=%d", voice, rate, len(script.split()))
         boundaries = await _synthesise(script, audio_path, voice, rate)

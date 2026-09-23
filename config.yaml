@@ -70,8 +70,8 @@ tts:
 
   # ElevenLabs configuration (optional - set ELEVENLABS_API_KEY in .env)
   elevenlabs:
-    # Zack D. Films voice ID or your custom voice clone ID from elevenlabs.io
-    voice_id: "pNInz6obpgDQGcFmaJgB"  # Adam (or replace with your Zack D voice clone ID)
+    # Zack D. Films / requested voice ID
+    voice_id: "UgBBYS2sOqTuMpoF3BR0"
     model_id: "eleven_multilingual_v2"
     stability: 0.5
     similarity_boost: 0.85
