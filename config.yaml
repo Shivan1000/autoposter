@@ -44,20 +44,13 @@ posting:
 
 # ---- TTS / Audio --------------------------------------------
 tts:
-  # Provider: "elevenlabs" (using your API key) or "edge-tts" (100% free)
-  provider: elevenlabs
+  # Provider: "edge-tts" (100% free, fast, high quality)
+  provider: edge-tts
 
-  # Voice name.
-  # For Zack D. Films style (deep, authoritative, fast-paced):
-  #   - en-US-ChristopherNeural (Edge-TTS closest free equivalent to Zack D. Films)
-  # Other popular storytelling voices:
-  #   - en-US-BrianNeural       (Casual, viral story narrator)
-  #   - en-US-GuyNeural         (Passionate, dynamic)
-  #   - en-US-AndrewMultilingualNeural (Authentic, confident)
-  #   - en-US-EricNeural        (Rational, scientific)
+  # Locked Voice: Zack D. Films style (deep, authoritative, fast-paced storytelling)
   voice: en-US-ChristopherNeural
 
-  # If true, randomly picks a voice from voices_pool for each reel
+  # Strictly use only this single voice (no rotating other voices)
   rotate_voices: false
 
   # Pool of voices used when rotate_voices is true
