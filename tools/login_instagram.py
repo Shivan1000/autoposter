@@ -33,13 +33,18 @@ async def manual_login():
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
+            channel="chrome",
             headless=False,
-            args=["--disable-blink-features=AutomationControlled"],
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-infobars",
+            ],
         )
         context = await browser.new_context(
             viewport={"width": 1280, "height": 850},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
+        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page = await context.new_page()
         await page.goto("https://www.instagram.com/accounts/login/", timeout=60000)
 
@@ -57,20 +62,24 @@ async def manual_login():
             pass
 
         print("👉 Please check the browser window and complete login.")
-        print("Waiting up to 180 seconds for login to succeed...\n")
+        print("Waiting up to 300 seconds (5 minutes) for login to succeed...\n")
 
         # Poll every 2 seconds for successful login
         logged_in = False
-        for _ in range(90):
+        for _ in range(150):
             await page.wait_for_timeout(2000)
             try:
+                # Check cookies for active session
+                cookies = await context.cookies()
+                has_session = any(c.get("name") == "sessionid" for c in cookies)
+
                 # Check for home or create icons
                 home_icon = await page.query_selector('svg[aria-label="Home"]')
                 create_icon = await page.query_selector('svg[aria-label="New post"], svg[aria-label="Create"]')
                 
                 # Check URL
                 cur_url = page.url
-                if (home_icon or create_icon) and "/accounts/login" not in cur_url:
+                if (has_session or home_icon or create_icon) and "/accounts/login" not in cur_url:
                     logged_in = True
                     break
             except Exception:

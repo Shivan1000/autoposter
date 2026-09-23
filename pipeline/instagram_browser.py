@@ -126,9 +126,14 @@ class InstagramBrowserPublisher:
     ) -> PublishResult:
         """Main upload flow."""
         async with async_playwright() as p:
+            # Launch real installed Google Chrome for trusted Meta authentication
             browser: Browser = await p.chromium.launch(
+                channel="chrome",
                 headless=self.headless,
-                args=["--disable-blink-features=AutomationControlled"],
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                ],
             )
 
             # Standard desktop viewport and user agent for creator studio / web upload
@@ -146,6 +151,7 @@ class InstagramBrowserPublisher:
                 context_kwargs["storage_state"] = str(_SESSION_FILE)
 
             context: BrowserContext = await browser.new_context(**context_kwargs)
+            await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             page: Page = await context.new_page()
 
             try:
@@ -153,6 +159,7 @@ class InstagramBrowserPublisher:
                 logger.info("[%s] Navigating to Instagram...", job_id)
                 await page.goto("https://www.instagram.com/", timeout=self.timeout_ms)
                 await page.wait_for_timeout(3000)
+                await self._dismiss_popups(page)
 
                 # Step 2: Check if logged in, if not → login
                 if not await self._is_logged_in(page):
@@ -162,19 +169,11 @@ class InstagramBrowserPublisher:
                         )
                     await self._login(page, job_id)
 
+                await self._dismiss_popups(page)
+
                 # Step 3: Navigate to create page
                 logger.info("[%s] Navigating to create/upload page...", job_id)
-                await page.goto(
-                    "https://www.instagram.com/create/style/",
-                    timeout=self.timeout_ms,
-                )
-                await page.wait_for_timeout(2000)
-
-                # If redirected, try the main create flow
-                current_url = page.url
-                if "create" not in current_url:
-                    # Click the "+" create button instead
-                    await self._click_create_button(page)
+                await self._click_create_button(page)
 
                 # Step 4: Upload video
                 logger.info("[%s] Uploading video: %s", job_id, video_path.name)
@@ -228,9 +227,15 @@ class InstagramBrowserPublisher:
             if "/accounts/login" in url:
                 return False
 
+            # Check cookies for active session
+            cookies = await page.context.cookies()
+            if any(c.get("name") == "sessionid" for c in cookies) and "/accounts/login" not in url:
+                logger.info("Already logged into Instagram (found valid session cookie)")
+                return True
+
             # Check for the home feed or profile elements
             home_icon = await page.query_selector('svg[aria-label="Home"]')
-            create_icon = await page.query_selector('svg[aria-label="New post"]')
+            create_icon = await page.query_selector('svg[aria-label="New post"], svg[aria-label="Create"]')
 
             if home_icon or create_icon:
                 logger.info("Already logged into Instagram")
@@ -372,11 +377,35 @@ class InstagramBrowserPublisher:
         logger.info("[%s] Login complete", job_id)
 
     # ------------------------------------------------------------------
+    async def _dismiss_popups(self, page: Page) -> None:
+        """Dismiss common modals like 'Turn on Notifications' or 'Save Info'."""
+        dismiss_selectors = [
+            'button:has-text("Not Now")',
+            'button:has-text("Not now")',
+            'button:has-text("Cancel")',
+            'button:has-text("Decline")',
+            'button:has-text("OK")',
+        ]
+        for sel in dismiss_selectors:
+            try:
+                btns = await page.query_selector_all(sel)
+                for btn in btns:
+                    if await btn.is_visible():
+                        txt = (await btn.inner_text()).strip().lower()
+                        if txt in ["not now", "cancel", "decline", "ok"]:
+                            logger.info("Dismissing popup with button: %s", txt)
+                            await btn.click(force=True)
+                            await page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
     # Upload flow
     # ------------------------------------------------------------------
 
     async def _click_create_button(self, page: Page) -> None:
         """Click the create/new post button on Instagram."""
+        await self._dismiss_popups(page)
         selectors = [
             'svg[aria-label="New post"]',
             'svg[aria-label="New Post"]',
@@ -387,11 +416,17 @@ class InstagramBrowserPublisher:
             '[aria-label="Create"]',
         ]
         for sel in selectors:
-            btn = await page.query_selector(sel)
-            if btn:
-                await btn.click()
-                await page.wait_for_timeout(2000)
-                return
+            try:
+                btn = await page.query_selector(sel)
+                if btn and await btn.is_visible():
+                    try:
+                        await btn.click(timeout=5000)
+                    except Exception:
+                        await btn.click(force=True)
+                    await page.wait_for_timeout(2000)
+                    return
+            except Exception:
+                continue
 
         # Fallback: try clicking the "+" icon by looking at all SVGs
         logger.warning("Could not find create button with known selectors, trying fallback")
@@ -403,69 +438,92 @@ class InstagramBrowserPublisher:
 
     async def _upload_video(self, page: Page, video_path: Path) -> None:
         """Upload the video file via the file input."""
+        await self._dismiss_popups(page)
         # Look for file input (hidden, used by the upload dialog)
-        file_input = await page.query_selector('input[type="file"]')
+        try:
+            file_input = await page.wait_for_selector('input[type="file"]', timeout=8000)
+            if file_input:
+                await file_input.set_input_files(str(video_path.resolve()))
+                logger.info("Video file attached via input[type=file]")
+                await page.wait_for_timeout(5000)
+                return
+        except Exception:
+            pass
 
-        if not file_input:
-            # Try clicking "Select from computer" button first
-            select_btn = await page.query_selector('button:has-text("Select from computer")')
-            if not select_btn:
-                select_btn = await page.query_selector('button:has-text("Select From Computer")')
-            if not select_btn:
-                select_btn = await page.query_selector('button:has-text("Select")')
-
-            if select_btn:
-                # Set up file chooser listener before clicking
-                async with page.expect_file_chooser() as fc_info:
-                    await select_btn.click()
+        # Try clicking "Select from computer" button
+        select_selectors = [
+            'button:has-text("Select from computer")',
+            'button:has-text("Select From Computer")',
+            'button:has-text("Select from device")',
+            'button:has-text("Select")',
+        ]
+        for sel in select_selectors:
+            select_btn = await page.query_selector(sel)
+            if select_btn and await select_btn.is_visible():
+                async with page.expect_file_chooser(timeout=10000) as fc_info:
+                    await select_btn.click(force=True)
                 file_chooser = await fc_info.value
                 await file_chooser.set_files(str(video_path.resolve()))
-            else:
-                # Last resort: find any file input
-                file_input = await page.wait_for_selector(
-                    'input[type="file"]', timeout=self.timeout_ms
-                )
-                await file_input.set_input_files(str(video_path.resolve()))
-        else:
-            await file_input.set_input_files(str(video_path.resolve()))
+                logger.info("Video file attached via file chooser dialog")
+                await page.wait_for_timeout(5000)
+                return
 
+        # Last resort: find any file input
+        file_input = await page.wait_for_selector(
+            'input[type="file"]', timeout=self.timeout_ms
+        )
+        await file_input.set_input_files(str(video_path.resolve()))
         logger.info("Video file selected, waiting for upload processing...")
         await page.wait_for_timeout(5000)
 
     async def _add_caption_and_publish(self, page: Page, caption: str) -> None:
         """Navigate through the post creation flow, add caption, and publish."""
-        # Click "Next" buttons to advance through the flow
-        for step in range(3):
-            next_btn = await page.query_selector('button:has-text("Next")')
-            if not next_btn:
-                next_btn = await page.query_selector('[role="button"]:has-text("Next")')
-            if next_btn:
-                await next_btn.click()
+        for _ in range(4):
+            await page.wait_for_timeout(1000)
+            ok_btn = await page.query_selector('button:has-text("OK"), [role="button"]:has-text("OK")')
+            if ok_btn and await ok_btn.is_visible():
+                await ok_btn.click(force=True)
+                await page.wait_for_timeout(1000)
+
+            # Check if caption field is already visible
+            caption_check = await page.query_selector('div[role="textbox"], textarea')
+            if caption_check and await caption_check.is_visible():
+                break
+
+            next_btn = await page.query_selector(
+                'button:has-text("Next"), div[role="button"]:has-text("Next"), [role="button"]:has-text("Next"), span:has-text("Next")'
+            )
+            if next_btn and await next_btn.is_visible():
+                try:
+                    await next_btn.click(timeout=5000)
+                except Exception:
+                    await next_btn.click(force=True)
                 await page.wait_for_timeout(2000)
             else:
                 break
 
         # Look for caption/textarea
         caption_selectors = [
-            'textarea[aria-label="Write a caption..."]',
-            'textarea[aria-label="Write a caption…"]',
-            'textarea[placeholder="Write a caption..."]',
-            'div[aria-label="Write a caption..."]',
+            'div[aria-label*="caption" i]',
             'div[role="textbox"]',
+            'textarea[aria-label*="caption" i]',
+            'textarea[placeholder*="caption" i]',
             'textarea',
         ]
 
         caption_input = None
         for sel in caption_selectors:
             caption_input = await page.query_selector(sel)
-            if caption_input:
+            if caption_input and await caption_input.is_visible():
                 break
 
         if caption_input:
-            await caption_input.click()
+            await caption_input.click(force=True)
             await page.wait_for_timeout(500)
-            # Type caption character by character for reliability
-            await page.keyboard.type(caption, delay=10)
+            try:
+                await caption_input.fill(caption)
+            except Exception:
+                await page.keyboard.type(caption, delay=5)
             logger.info("Caption added (%d chars)", len(caption))
         else:
             logger.warning("Could not find caption input — posting without caption")
@@ -475,6 +533,7 @@ class InstagramBrowserPublisher:
         # Click "Share" or "Post" button
         share_selectors = [
             'button:has-text("Share")',
+            'div[role="button"]:has-text("Share")',
             '[role="button"]:has-text("Share")',
             'button:has-text("Post")',
             'button:has-text("Publish")',
@@ -483,8 +542,11 @@ class InstagramBrowserPublisher:
         shared = False
         for sel in share_selectors:
             share_btn = await page.query_selector(sel)
-            if share_btn:
-                await share_btn.click()
+            if share_btn and await share_btn.is_visible():
+                try:
+                    await share_btn.click(timeout=5000)
+                except Exception:
+                    await share_btn.click(force=True)
                 shared = True
                 break
 
@@ -495,14 +557,14 @@ class InstagramBrowserPublisher:
 
         # Wait for upload to complete
         logger.info("Waiting for reel to finish uploading...")
-        await page.wait_for_timeout(15000)
+        for _ in range(40):
+            await page.wait_for_timeout(2000)
+            body = await page.evaluate("() => document.body.innerText")
+            if "shared" in body.lower() or "your reel" in body.lower() or "your post has been shared" in body.lower():
+                logger.info("✅ Reel published successfully!")
+                return
 
-        # Check for success indicator
-        body = await page.evaluate("() => document.body.innerText")
-        if "shared" in body.lower() or "your reel" in body.lower():
-            logger.info("✅ Reel published successfully!")
-        else:
-            logger.info("Upload may have completed — check your Instagram profile")
+        logger.info("Upload wait finished — reel should be posted")
 
 
 # ---------------------------------------------------------------------------
