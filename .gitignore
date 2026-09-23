@@ -20,6 +20,8 @@ env/
 # Data / State
 data/dedup.db
 data/*.db
+data/*.json
+data/instagram_session.json
 
 # Logs
 logs/

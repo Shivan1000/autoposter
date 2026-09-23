@@ -131,16 +131,14 @@ class InstagramBrowserPublisher:
                 args=["--disable-blink-features=AutomationControlled"],
             )
 
-            # Load saved session or create new context
+            # Standard desktop viewport and user agent for creator studio / web upload
             context_kwargs = {
-                "viewport": {"width": 430, "height": 932},  # Mobile viewport
+                "viewport": {"width": 1280, "height": 850},
                 "user_agent": (
-                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                    "Version/17.0 Mobile/15E148 Safari/604.1"
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
                 ),
-                "is_mobile": True,
-                "has_touch": True,
             }
 
             if _SESSION_FILE.exists():
@@ -206,13 +204,6 @@ class InstagramBrowserPublisher:
                     job_id, debug_path, exc,
                 )
 
-                # Still save session even on error
-                try:
-                    _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-                    await context.storage_state(path=str(_SESSION_FILE))
-                except Exception:
-                    pass
-
                 return PublishResult(
                     success=False,
                     error_message=str(exc),
@@ -275,27 +266,79 @@ class InstagramBrowserPublisher:
         except PlaywrightError:
             pass
 
-        # Fill in username
-        username_input = await page.wait_for_selector(
-            'input[name="username"]', timeout=self.timeout_ms
-        )
+        # Fill in username (support various Instagram web layouts)
+        # Fill in username (support both Instagram and Meta login forms)
+        username_selectors = [
+            'input[name="email"]',
+            'input[name="username"]',
+            'input[aria-label*="username" i]',
+            'input[aria-label*="email" i]',
+            'input[placeholder*="username" i]',
+            'input[placeholder*="number" i]',
+            'input[type="text"]',
+        ]
+        username_input = None
+        for sel in username_selectors:
+            try:
+                username_input = await page.wait_for_selector(sel, timeout=4000)
+                if username_input and await username_input.is_visible():
+                    break
+            except Exception:
+                continue
+
+        if not username_input:
+            inputs = await page.query_selector_all('input')
+            for inp in inputs:
+                if await inp.is_visible():
+                    username_input = inp
+                    break
+
+        if not username_input:
+            raise InstagramBrowserError("Could not find username input field on Instagram login page")
+
         await username_input.fill(self._username)
 
         # Fill in password
-        password_input = await page.wait_for_selector(
-            'input[name="password"]', timeout=self.timeout_ms
-        )
+        password_selectors = [
+            'input[name="pass"]',
+            'input[name="password"]',
+            'input[type="password"]',
+            'input[aria-label*="password" i]',
+        ]
+        password_input = None
+        for sel in password_selectors:
+            try:
+                password_input = await page.wait_for_selector(sel, timeout=4000)
+                if password_input and await password_input.is_visible():
+                    break
+            except Exception:
+                continue
+
+        if not password_input:
+            inputs = await page.query_selector_all('input[type="password"]')
+            if inputs:
+                password_input = inputs[0]
+
+        if not password_input:
+            raise InstagramBrowserError("Could not find password input field on Instagram login page")
+
         await password_input.fill(self._password)
 
-        # Click login button
-        login_btn = await page.wait_for_selector(
-            'button[type="submit"]', timeout=self.timeout_ms
-        )
-        await login_btn.click()
+        # Submit via Enter or button
+        await page.wait_for_timeout(1000)
+        logger.info("[%s] Submitting login...", job_id)
+        await password_input.press("Enter")
 
-        # Wait for login to complete
-        logger.info("[%s] Waiting for login to complete...", job_id)
-        await page.wait_for_timeout(5000)
+        # Wait and check response
+        logger.info("[%s] Waiting for login response...", job_id)
+        await page.wait_for_timeout(6000)
+
+        body = await page.evaluate("() => document.body.innerText")
+        if "login information you entered is incorrect" in body.lower() or "password was incorrect" in body.lower():
+            raise InstagramBrowserError(
+                "Instagram error: The login information entered is incorrect. "
+                "Please verify INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD."
+            )
 
         # Check for 2FA prompt
         body = await page.evaluate("() => document.body.innerText")
@@ -336,10 +379,12 @@ class InstagramBrowserPublisher:
         """Click the create/new post button on Instagram."""
         selectors = [
             'svg[aria-label="New post"]',
-            'a[href="/create/style/"]',
-            'a[href="/create/select/"]',
-            '[aria-label="New post"]',
             'svg[aria-label="New Post"]',
+            'svg[aria-label="Create"]',
+            'span:has-text("Create")',
+            'a[href*="/create/"]',
+            '[aria-label="New post"]',
+            '[aria-label="Create"]',
         ]
         for sel in selectors:
             btn = await page.query_selector(sel)
