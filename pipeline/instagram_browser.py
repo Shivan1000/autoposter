@@ -188,9 +188,11 @@ class InstagramBrowserPublisher:
                 await context.storage_state(path=str(_SESSION_FILE))
                 logger.info("Instagram session saved for future use")
 
+                ig_user = self._username.strip()
+                profile_link = f"https://www.instagram.com/{ig_user}/" if ig_user else "https://www.instagram.com/"
                 return PublishResult(
                     success=True,
-                    reel_url="https://www.instagram.com/",  # Exact URL not easily extractable
+                    reel_url=profile_link,
                 )
 
             except Exception as exc:

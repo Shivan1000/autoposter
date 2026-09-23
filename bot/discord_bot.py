@@ -515,12 +515,20 @@ def _build_progress_embed(subreddit: str, tone: str | None, stage: str) -> disco
 
 def _build_result_embed(result: PipelineResult) -> discord.Embed:
     if result.success:
+        ig_user = os.getenv("INSTAGRAM_USERNAME", "").strip()
+        link = result.reel_url
+        if not link or link.strip() == "https://www.instagram.com/":
+            link = f"https://www.instagram.com/{ig_user}/" if ig_user else "https://www.instagram.com/"
+
+        profile_display = f"[@{ig_user}]({link})" if ig_user else f"[View Profile]({link})"
+
         embed = discord.Embed(
             title="✅ Reel Posted Successfully!",
             description=(
                 f"**r/{result.subreddit}** → Instagram Reels\n\n"
                 f"📝 **Post**: {result.reddit_title or '(unknown)'}\n"
-                f"🔗 **Reel**: {result.reel_url or 'N/A'}"
+                f"👤 **Instagram Profile**: {profile_display}\n"
+                f"🔗 **URL**: {link}"
             ),
             color=_EMBED_COLOR_SUCCESS,
         )
