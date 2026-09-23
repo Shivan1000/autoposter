@@ -225,18 +225,24 @@ class VideoComposer:
 
         # Overlay position (support 'middle' / 'center' or numeric fraction)
         overlay_x = int((self.width - int(self.width * self.screenshot_width_fraction)) / 2)
-        if isinstance(self.screenshot_y_fraction, str) and self.screenshot_y_fraction.lower() in ("middle", "center"):
-            with Image.open(overlay_path) as oimg:
-                overlay_h = oimg.height
-            overlay_y = max(0, int((self.height - overlay_h) / 2))
+        with Image.open(overlay_path) as oimg:
+            overlay_h = oimg.height
+
+        if isinstance(self.screenshot_y_fraction, str):
+            val = self.screenshot_y_fraction.lower()
+            if val in ("upper_middle", "top_middle", "reel_upper"):
+                # Position in the upper-middle third (centered around Y=720), leaves center/bottom open for subtitles
+                overlay_y = max(180, int((self.height * 0.38) - (overlay_h / 2)))
+            elif val in ("middle", "center"):
+                overlay_y = max(180, int((self.height * 0.44) - (overlay_h / 2)))
+            else:
+                overlay_y = max(180, int((self.height * 0.38) - (overlay_h / 2)))
         else:
             try:
                 frac = float(self.screenshot_y_fraction)
                 overlay_y = int(self.height * frac)
             except (ValueError, TypeError):
-                with Image.open(overlay_path) as oimg:
-                    overlay_h = oimg.height
-                overlay_y = max(0, int((self.height - overlay_h) / 2))
+                overlay_y = max(180, int((self.height * 0.38) - (overlay_h / 2)))
 
         # We use the subtitles filter which reads the .ass file directly.
         # On Windows, backslashes in the path must be escaped for ffmpeg's filter syntax.

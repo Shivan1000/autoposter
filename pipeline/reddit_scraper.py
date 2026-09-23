@@ -465,26 +465,26 @@ class RedditScraper:
         .card {{
             background: #1a1a1b;
             border: 1px solid #343536;
-            border-radius: 18px;
-            padding: 24px 22px;
-            width: 720px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+            border-radius: 16px;
+            padding: 16px 18px;
+            width: 640px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
         }}
         .header {{
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 14px;
+            gap: 10px;
+            margin-bottom: 10px;
         }}
         .subreddit-icon {{
-            width: 38px;
-            height: 38px;
+            width: 32px;
+            height: 32px;
             background: linear-gradient(135deg, #ff4500, #ff6b35);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 15px;
+            font-size: 13px;
             color: white;
             font-weight: 800;
             flex-shrink: 0;
@@ -492,31 +492,31 @@ class RedditScraper:
         .header-text {{
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 1px;
         }}
         .subreddit-name {{
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             color: #f2f4f5;
         }}
         .post-meta {{
-            font-size: 12px;
+            font-size: 11px;
             color: #818384;
         }}
         .title {{
-            font-size: 22px;
+            font-size: 18px;
             font-weight: 600;
-            line-height: 1.35;
-            margin-bottom: 16px;
+            line-height: 1.3;
+            margin-bottom: 10px;
             color: #f2f4f5;
             letter-spacing: -0.2px;
         }}
         .post-image-container {{
             width: 100%;
-            max-height: 480px;
+            max-height: 320px;
             overflow: hidden;
-            border-radius: 12px;
-            margin-bottom: 14px;
+            border-radius: 10px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -526,25 +526,25 @@ class RedditScraper:
         .post-image {{
             width: 100%;
             height: auto;
-            max-height: 480px;
+            max-height: 320px;
             object-fit: contain;
-            border-radius: 10px;
+            border-radius: 8px;
         }}
         .actions {{
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
-            padding-bottom: 14px;
+            padding-bottom: 10px;
             border-bottom: 1px solid #2d2d2e;
         }}
         .action-btn {{
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             background: #272729;
-            border-radius: 20px;
-            padding: 6px 14px;
-            font-size: 12px;
+            border-radius: 16px;
+            padding: 4px 10px;
+            font-size: 11px;
             color: #818384;
             font-weight: 600;
         }}

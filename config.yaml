@@ -92,9 +92,9 @@ subtitles:
   outline_width: 6
   shadow: 3
   # Vertical position of subtitle block (pixels from bottom)
-  # 360px sits in the middle-bottom sweet-spot: clearly below the centered screenshot
-  # and clearly above Instagram's bottom caption/audio bar
-  margin_bottom: 360
+  # 480px sits in the mobile safe zone: cleanly below the upper-middle Reddit card
+  # and safely above Instagram's bottom caption and audio bar
+  margin_bottom: 480
   margin_left: 60
   margin_right: 60
 
@@ -110,10 +110,10 @@ video:
   tail_padding_sec: 1.0
   # Gameplay clips directory (relative to project root)
   background_dir: assets/gameplay
-  # Screenshot overlay: fraction of frame width
-  screenshot_width_fraction: 0.92
-  # Screenshot vertical position: "middle" / "center" centers card vertically in the middle
-  screenshot_y_fraction: "middle"
+  # Screenshot overlay: fraction of frame width (0.86 gives mobile breathing room)
+  screenshot_width_fraction: 0.86
+  # Screenshot vertical position: "upper_middle" leaves plenty of room for gameplay + subtitles
+  screenshot_y_fraction: "upper_middle"
   # Corner radius for screenshot overlay (pixels)
   screenshot_corner_radius: 20
 
