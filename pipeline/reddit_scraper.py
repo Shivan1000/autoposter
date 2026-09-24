@@ -398,10 +398,31 @@ class RedditScraper:
                 selected["comments"] = comments
                 logger.info("Extracted %d comments for post [%s]", len(comments), selected["id"])
 
-                # 2. Render styled card HTML with comments and optional image
+                # 2. Pre-fetch the meme image as base64 so Playwright doesn't
+                #    need to make external network requests (avoids networkidle timeout)
+                image_url = selected.get("image_url")
+                if image_url:
+                    try:
+                        async with httpx.AsyncClient(
+                            headers={"User-Agent": "Mozilla/5.0"},
+                            follow_redirects=True,
+                            timeout=10.0,
+                        ) as client:
+                            img_resp = await client.get(image_url)
+                        if img_resp.status_code == 200:
+                            import base64
+                            ct = img_resp.headers.get("content-type", "image/jpeg")
+                            b64 = base64.b64encode(img_resp.content).decode()
+                            selected["image_url"] = f"data:{ct};base64,{b64}"
+                            logger.debug("Image pre-fetched as base64 (%d bytes)", len(img_resp.content))
+                    except Exception as exc:
+                        logger.warning("Could not pre-fetch meme image (%s), using URL directly", exc)
+
+                # 3. Render styled card HTML with comments and embedded image
                 html = self._build_post_html(selected, subreddit)
-                await page.set_content(html, wait_until="networkidle")
-                await page.wait_for_timeout(500)
+                # Use domcontentloaded — image is embedded as base64 so no external requests needed
+                await page.set_content(html, wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(300)
 
                 # 3. Screenshot ONLY the .card element (transparent background)
                 screenshot_path.parent.mkdir(parents=True, exist_ok=True)
