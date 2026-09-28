@@ -34,9 +34,9 @@ _TARGET_HEIGHT = 1920
 _FPS = 30
 _VIDEO_CODEC = "libx264"
 _AUDIO_CODEC = "aac"
-_AUDIO_BITRATE = "128k"
-_CRF = 23
-_PRESET = "fast"
+_AUDIO_BITRATE = "192k"
+_CRF = 18
+_PRESET = "medium"
 
 
 class VideoComposerError(RuntimeError):
@@ -161,15 +161,52 @@ class VideoComposer:
                 raise VideoComposerError(f"{label} file is empty: {path}")
 
     def _select_background_clip(self) -> Path:
-        """Pick a random gameplay clip from background_dir."""
-        clips = list(self.background_dir.glob("*.mp4"))
-        if not clips:
+        """Pick a high-definition (720p+) gameplay clip from background_dir."""
+        all_clips = list(self.background_dir.glob("*.mp4"))
+        if not all_clips:
             raise VideoComposerError(
                 f"No .mp4 files found in background directory: {self.background_dir}\n"
-                "Add Subway Surfers (or similar) footage clips to assets/gameplay/\n"
-                "or run: python tools/download_gameplay.py"
+                "Add Minecraft Parkour / Subway Surfers 1080p clips to assets/gameplay/"
             )
-        return random.choice(clips)
+
+        valid_clips = []
+        for clip in all_clips:
+            w, h = self._probe_resolution(clip)
+            if w >= 720 and h >= 720:
+                valid_clips.append(clip)
+            else:
+                logger.warning("Skipping low-resolution gameplay clip (%dx%d): %s", w, h, clip.name)
+
+        if not valid_clips:
+            logger.warning("No clips >= 720p found; using available clips")
+            valid_clips = all_clips
+
+        return random.choice(valid_clips)
+
+    @staticmethod
+    def _probe_resolution(video_path: Path) -> tuple[int, int]:
+        """Return (width, height) of video file via ffprobe."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "quiet",
+                    "-print_format", "json",
+                    "-show_streams",
+                    str(video_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            import json
+            data = json.loads(result.stdout)
+            for s in data.get("streams", []):
+                if s.get("codec_type") == "video":
+                    return int(s.get("width", 0)), int(s.get("height", 0))
+            return 0, 0
+        except Exception:
+            return 0, 0
 
     def _prepare_screenshot_overlay(
         self,
@@ -288,6 +325,9 @@ class VideoComposer:
             "-c:v", _VIDEO_CODEC,
             "-crf", str(self.crf),
             "-preset", _PRESET,
+            "-b:v", "8M",
+            "-maxrate", "12M",
+            "-bufsize", "16M",
             "-profile:v", "high",
             "-level", "4.1",
             "-pix_fmt", "yuv420p",

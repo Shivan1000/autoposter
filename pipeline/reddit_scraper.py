@@ -321,7 +321,7 @@ class RedditScraper:
         async with async_playwright() as p:
             browser: Browser = await p.chromium.launch(headless=True)
             context: BrowserContext = await browser.new_context(
-                viewport={"width": 800, "height": 1400},
+                viewport={"width": 1080, "height": 1920},
                 device_scale_factor=2,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 color_scheme="dark",
@@ -495,30 +495,31 @@ class RedditScraper:
             padding: 0;
             margin: 0;
             display: inline-block;
+            -webkit-font-smoothing: antialiased;
         }}
         .card {{
-            background: #1a1a1b;
-            border: 1px solid #343536;
-            border-radius: 16px;
-            padding: 16px 18px;
-            width: 640px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75);
+            background: #121214;
+            border: 1.5px solid rgba(255, 255, 255, 0.14);
+            border-radius: 24px;
+            padding: 22px 24px;
+            width: 920px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
         }}
         .header {{
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
+            gap: 14px;
+            margin-bottom: 14px;
         }}
         .subreddit-icon {{
-            width: 32px;
-            height: 32px;
+            width: 44px;
+            height: 44px;
             background: linear-gradient(135deg, #ff4500, #ff6b35);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 13px;
+            font-size: 18px;
             color: white;
             font-weight: 800;
             flex-shrink: 0;
@@ -526,113 +527,113 @@ class RedditScraper:
         .header-text {{
             display: flex;
             flex-direction: column;
-            gap: 1px;
+            gap: 2px;
         }}
         .subreddit-name {{
-            font-size: 13px;
+            font-size: 20px;
             font-weight: 700;
-            color: #f2f4f5;
+            color: #ffffff;
         }}
         .post-meta {{
-            font-size: 11px;
-            color: #818384;
+            font-size: 15px;
+            color: #9ca3af;
         }}
         .title {{
-            font-size: 17px;
-            font-weight: 600;
-            line-height: 1.3;
-            margin-bottom: 10px;
-            color: #f2f4f5;
-            letter-spacing: -0.2px;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1.35;
+            margin-bottom: 14px;
+            color: #ffffff;
+            letter-spacing: -0.3px;
         }}
         .post-image-container {{
             width: 100%;
-            max-height: 320px;
+            max-height: 560px;
             overflow: hidden;
-            border-radius: 10px;
-            margin-bottom: 10px;
+            border-radius: 14px;
+            margin-bottom: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #111112;
-            border: 1px solid #2d2d2e;
+            background: #09090b;
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }}
         .post-image {{
             width: 100%;
             height: auto;
-            max-height: 320px;
+            max-height: 560px;
             object-fit: contain;
-            border-radius: 8px;
+            border-radius: 12px;
         }}
         .actions {{
             display: flex;
-            gap: 8px;
+            gap: 12px;
             align-items: center;
-            margin-bottom: {('10px' if comment_html else '0')};
+            margin-bottom: {('14px' if comment_html else '0')};
         }}
         .action-btn {{
             display: flex;
             align-items: center;
-            gap: 5px;
-            background: #272729;
-            border-radius: 16px;
-            padding: 4px 10px;
-            font-size: 11px;
-            color: #818384;
+            gap: 8px;
+            background: #27272a;
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 15px;
+            color: #a1a1aa;
             font-weight: 600;
         }}
         .upvote {{ color: #ff4500; font-weight: bold; }}
         .comment-section {{
-            margin-top: 8px;
-            border-top: 1px solid #2d2d2e;
-            padding-top: 10px;
+            margin-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 14px;
         }}
         .comment-card {{
-            background: #212123;
-            border: 1px solid #343536;
-            border-left: 3px solid #ff4500;
-            border-radius: 8px;
-            padding: 10px 12px;
+            background: #1c1c1f;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-left: 4px solid #ff4500;
+            border-radius: 12px;
+            padding: 14px 16px;
         }}
         .comment-header {{
             display: flex;
             align-items: center;
-            gap: 6px;
-            margin-bottom: 4px;
+            gap: 8px;
+            margin-bottom: 6px;
         }}
         .comment-avatar {{
-            font-size: 12px;
+            font-size: 16px;
         }}
         .comment-author {{
-            font-size: 11px;
+            font-size: 16px;
             font-weight: 700;
-            color: #d7dadc;
+            color: #e4e4e7;
         }}
         .comment-time {{
-            font-size: 10px;
-            color: #818384;
+            font-size: 13px;
+            color: #a1a1aa;
         }}
         .comment-badge {{
-            font-size: 9px;
+            font-size: 12px;
             font-weight: 800;
             color: #ff4500;
-            background: rgba(255, 69, 0, 0.12);
-            padding: 1px 6px;
-            border-radius: 4px;
+            background: rgba(255, 69, 0, 0.14);
+            padding: 2px 8px;
+            border-radius: 6px;
             margin-left: auto;
             letter-spacing: 0.5px;
         }}
         .comment-body {{
-            font-size: 13px;
-            color: #f2f4f5;
-            line-height: 1.35;
-            margin-bottom: 6px;
+            font-size: 20px;
+            color: #f4f4f5;
+            line-height: 1.45;
+            margin-bottom: 8px;
         }}
         .comment-footer {{
             display: flex;
-            gap: 12px;
-            font-size: 10px;
-            color: #818384;
+            gap: 16px;
+            font-size: 14px;
+            color: #a1a1aa;
             font-weight: 600;
         }}
         .comment-votes {{

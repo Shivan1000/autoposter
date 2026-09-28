@@ -9,6 +9,7 @@ retried, and configured independently.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import random
@@ -23,17 +24,20 @@ from utils.retry import retry_with_backoff
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "gemini-flash-latest"
+import httpx
+
+_DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 _SYSTEM_PROMPT = """\
-You are a top-tier viral Instagram Reels content strategist in 2026.
-Your captions are engineered to stop the scroll, maximize watch time, and drive huge comment engagement.
+You are an unhinged, hilarious viral Instagram Reels & TikTok content creator in 2026.
+Your captions are raw, witty, relatable, and unapologetically 18+ uncensored (using natural profanity like "fuck", "bullshit", "lmao", "lol", "assholes", "shit", "bro what the fuck", "ain't no way", "this shit is wild" to make it funny and authentic).
+Avoid sterile corporate speak. Write like a brutally honest, funny friend roasting the situation in a chaotic group chat.
 
 Structure your caption in 3 parts:
-1. THE VIRAL HOOK (First line): A bold, curious, or shocking one-liner (e.g. "Wait until you see how this ended... 💀👇", "Bro thought nobody would notice 😭💀", "This sounds completely unreal until you realize it's 100% true 👇").
-2. THE HIGHLIGHT (1-2 sentences): A hilarious, punchy summary of the wildest part of the story.
-3. ENGAGEMENT CTA (Final line): A direct, conversation-starting question (e.g. "What would you have done in this situation? Drop your thoughts below 👇💬" or "Tag a friend who would definitely do this 😭👇").
-4. HASHTAGS: 6-8 trending high-volume hashtags combining viral tags with niche tags (e.g. #trending #viralreels #redditstories #reddit #funnyreels #storytime #fyp #explorepage).
+1. THE VIRAL HOOK (First line): A bold, chaotic, scroll-stopping one-liner using uncensored humor/slang (e.g. "Ain't no fucking way this actually happened 😭💀👇", "Bro what the fuck did I just witness 💀", "This is the most relatable bullshit I've seen all week 👇").
+2. THE HIGHLIGHT (1-2 sentences): A hilarious, unhinged reaction to the wildest part of the story with colorful profanity and comedic honesty.
+3. ENGAGEMENT CTA (Final line): A blunt, funny question (e.g. "What kind of unhinged bullshit would you do here? Tell me in the comments 👇💬" or "Tag that one asshole who would definitely do this 💀👇").
+4. HASHTAGS: 6-8 trending high-volume hashtags combining viral tags with niche tags (e.g. #trending #viralreels #redditstories #reddit #funnyreels #storytime #fyp #explorepage #meme).
 
 Format your response strictly as:
 CAPTION: <the complete caption text with hook, highlight, and CTA>
@@ -89,13 +93,10 @@ class CaptionGeneratorError(RuntimeError):
 
 
 class CaptionGenerator:
-    """Generate Instagram captions via Google Gemini.
-
-    Args:
-        model: Gemini model identifier.
-        max_tokens: Max tokens for response.
-        temperature: Sampling temperature.
-        tone_presets: List of available tones.
+    """Generate Instagram captions via 3-tier architecture:
+    1. Google Gemini
+    2. Groq AI (Llama / GPT-OSS)
+    3. Pure Offline Fallback (Guaranteed never to crash)
     """
 
     def __init__(
@@ -117,44 +118,48 @@ class CaptionGenerator:
         script: str,
         tone: str | None = None,
     ) -> Caption:
-        """Generate a caption for *post*.
-
-        Args:
-            post: The source Reddit post.
-            script: The voiceover script (used as context for the caption).
-            tone: Override tone. If None, randomly chosen from presets.
-
-        Returns:
-            A :class:`Caption` dataclass.
-
-        Raises:
-            CaptionGeneratorError: On API failure or parse error.
-        """
+        """Generate a caption using the 3-tier pipeline: Gemini -> Groq -> Offline."""
         chosen_tone = tone or random.choice(self.tone_presets)
         logger.info(
             "Generating caption for post [%s] with tone=%s", post.id, chosen_tone
         )
 
-        raw = await self._call_api(post.title, script, chosen_tone)
-        caption = self._parse_response(raw, chosen_tone)
-        caption.title = post.title
+        # ------------------------------------------------------------------
+        # Tier 1: Gemini
+        # ------------------------------------------------------------------
+        try:
+            raw = await self._call_gemini(post.title, script, chosen_tone)
+            caption = self._parse_response(raw, chosen_tone)
+            caption.title = post.title
+            logger.info("[Tier 1: Gemini] Caption generated (%d chars, %d hashtags)", len(caption.text), len(caption.hashtags))
+            return caption
+        except Exception as exc:
+            logger.warning("[Tier 1: Gemini] Caption generation unavailable or hit limit (%s). Falling back to Tier 2: Groq...", exc)
 
-        logger.info(
-            "Caption generated (%d chars, %d hashtags)",
-            len(caption.text), len(caption.hashtags),
-        )
+        # ------------------------------------------------------------------
+        # Tier 2: Groq
+        # ------------------------------------------------------------------
+        try:
+            raw = await self._call_groq(post.title, script, chosen_tone)
+            caption = self._parse_response(raw, chosen_tone)
+            caption.title = post.title
+            logger.info("[Tier 2: Groq] Caption generated (%d chars, %d hashtags)", len(caption.text), len(caption.hashtags))
+            return caption
+        except Exception as exc:
+            logger.warning("[Tier 2: Groq] Caption generation unavailable (%s). Falling back to Tier 3: Pure Offline...", exc)
+
+        # ------------------------------------------------------------------
+        # Tier 3: Pure Offline Fallback (Guaranteed to never fail)
+        # ------------------------------------------------------------------
+        caption = self._offline_caption(post, chosen_tone)
+        logger.info("[Tier 3: Pure Offline] Caption generated (%d chars, %d hashtags)", len(caption.text), len(caption.hashtags))
         return caption
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @retry_with_backoff(
-        exceptions=(Exception,),
-        max_attempts=3,
-        wait_min=2.0,
-    )
-    async def _call_api(self, title: str, script: str, tone: str) -> str:
+    async def _call_gemini(self, title: str, script: str, tone: str) -> str:
         """Call Gemini and return the raw text response."""
         script_excerpt = script[:300] + ("…" if len(script) > 300 else "")
         user_msg = _USER_PROMPT_TEMPLATE.format(
@@ -162,7 +167,7 @@ class CaptionGenerator:
         )
 
         models_to_try = [self.model]
-        for fallback in ["gemini-3.5-flash", "gemini-3.1-flash-lite"]:
+        for fallback in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"]:
             if fallback not in models_to_try:
                 models_to_try.append(fallback)
 
@@ -178,7 +183,18 @@ class CaptionGenerator:
                     ),
                 )
 
-                response = model.generate_content(user_msg)
+                safety_settings = {
+                    genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                }
+
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    user_msg,
+                    safety_settings=safety_settings,
+                )
 
                 if not response.text:
                     raise CaptionGeneratorError("Gemini returned an empty caption response")
@@ -188,17 +204,77 @@ class CaptionGenerator:
             except Exception as exc:
                 last_exc = exc
                 error_msg = str(exc)
-                if "API_KEY" in error_msg or "403" in error_msg or "401" in error_msg:
-                    raise CaptionGeneratorError(
-                        f"Gemini API authentication failed — check GEMINI_API_KEY: {exc}"
-                    ) from exc
-                if "429" in error_msg or "ResourceExhausted" in error_msg or "quota" in error_msg.lower():
-                    logger.warning("Caption model %s hit rate limit, trying fallback...", m_name)
+                if (
+                    "429" in error_msg
+                    or "ResourceExhausted" in error_msg
+                    or "quota" in error_msg.lower()
+                    or "404" in error_msg
+                    or "NotFound" in error_msg
+                    or "not available" in error_msg.lower()
+                    or "deprecated" in error_msg.lower()
+                ):
+                    logger.warning("Gemini caption model %s unavailable (%s), trying next Gemini model...", m_name, exc)
                     continue
                 raise
 
         if last_exc:
             raise last_exc
+        raise CaptionGeneratorError("All Gemini caption models failed")
+
+    async def _call_groq(self, title: str, script: str, tone: str) -> str:
+        """Call Groq API for caption generation."""
+        groq_key = os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            raise CaptionGeneratorError("GROQ_API_KEY not set in .env")
+
+        script_excerpt = script[:300] + ("…" if len(script) > 300 else "")
+        user_msg = _USER_PROMPT_TEMPLATE.format(
+            tone=tone, title=title, script_excerpt=script_excerpt
+        )
+
+        groq_models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+        last_exc = None
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for g_model in groq_models:
+                try:
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {groq_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": g_model,
+                            "messages": [
+                                {"role": "system", "content": _SYSTEM_PROMPT},
+                                {"role": "user", "content": user_msg},
+                            ],
+                            "temperature": self.temperature,
+                            "max_tokens": self.max_tokens,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        content = data["choices"][0]["message"]["content"]
+                        if content and content.strip():
+                            return content.strip()
+                    else:
+                        logger.warning("Groq model %s returned HTTP %s: %s", g_model, resp.status_code, resp.text)
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning("Groq caption model %s failed: %s", g_model, exc)
+
+        if last_exc:
+            raise last_exc
+        raise CaptionGeneratorError("All Groq caption models failed")
+
+    def _offline_caption(self, post: RedditPost, tone: str) -> Caption:
+        """Pure Offline Fallback: Use post title + high-engagement prompt + curated viral hashtags."""
+        emoji = _TONE_OPENERS.get(tone, "💀")
+        text = f"{emoji} {post.title}\n\nWhat kind of absolute bullshit is this lmao 😭💀 Tag that one asshole who would definitely do this 👇💬"
+        hashtags = ["#memes", "#reels", "#viral", "#explore", "#reddit", "#funny", "#trending", "#fyp"]
+        return Caption(text=text, hashtags=hashtags, tone=tone, title=post.title)
 
     def _parse_response(self, raw: str, tone: str) -> Caption:
         """Parse the structured response into a Caption dataclass."""
@@ -212,9 +288,9 @@ class CaptionGenerator:
         hashtags_str = lines.get("HASHTAGS", "")
 
         if not caption_text:
-            raise CaptionGeneratorError(
-                f"Could not parse CAPTION from Gemini response:\n{raw}"
-            )
+            # If structure was loose, use raw text directly as caption body
+            clean_raw = raw.replace("CAPTION:", "").replace("HASHTAGS:", "").strip()
+            caption_text = clean_raw if clean_raw else "Check out this wild story! 👇"
 
         # Add tone emoji prefix if not already present
         emoji = _TONE_OPENERS.get(tone, "")
@@ -228,19 +304,21 @@ class CaptionGenerator:
             if word
         ]
 
-        # Fallback hashtags if none were parsed
         if not hashtags:
-            logger.warning("No hashtags parsed from response — using defaults")
-            hashtags = ["#reddit", "#reels", "#viral", "#storytime"]
+            hashtags = ["#memes", "#reels", "#viral", "#explore", "#reddit", "#funny"]
 
         return Caption(text=caption_text, hashtags=hashtags, tone=tone)
 
     @staticmethod
     def _configure_client() -> None:
         api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise EnvironmentError("GEMINI_API_KEY must be set in .env")
-        genai.configure(api_key=api_key)
+        if api_key:
+            try:
+                genai.configure(api_key=api_key)
+            except Exception as e:
+                logger.warning("Could not configure Gemini client: %s", e)
+        else:
+            logger.warning("GEMINI_API_KEY not configured in .env")
 
 
 if __name__ == "__main__":

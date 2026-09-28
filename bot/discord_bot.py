@@ -1,24 +1,28 @@
 """
 bot/discord_bot.py
 
-Discord bot entrypoint with slash commands.
+Discord bot entrypoint with slash commands and prefix commands.
 
 Commands:
-  /generate subreddit:<name> [tone:<funny|dramatic|curious|shocked|unhinged>]
+  /post [subreddit] [tone] or !post [subreddit]
     → Triggers the full pipeline for the given subreddit
     → Sends live progress updates + final result embed to the channel
 
-  /history [limit:<n>]
-    → Shows the last N successfully posted Reels from the dedup store
+  /thread [subreddit] [tone] or !thread [subreddit]
+    → Fetches Reddit post card, generates voiceover & caption preview
+    → Interactive buttons: [Post Reel to Instagram] [Another Thread]
 
-  /status
-    → Shows bot uptime, scheduled job status, and token health
+  /dryrun [subreddit] [tone] or !dryrun [subreddit]
+    → Generates video without uploading to Instagram (test render)
 
-Requires:
-  - DISCORD_BOT_TOKEN in .env
-  - discord.py 2.x with app_commands (slash commands) enabled
-  - Bot invited with: bot + applications.commands scopes
-  - Message Content Intent enabled in Discord Developer Portal
+  /history [limit] or !history
+    → Shows recently posted Reels
+
+  /status or !status
+    → Shows bot uptime, health, and latency
+
+  /help or !help
+    → Lists all available commands
 """
 
 from __future__ import annotations
@@ -26,21 +30,27 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 from dotenv import load_dotenv
 
+from pipeline.caption_generator import CaptionGenerator
 from pipeline.dedup_store import DedupStore
 from pipeline.orchestrator import PipelineResult, run_pipeline
+from pipeline.reddit_scraper import RedditScraper
+from pipeline.script_writer import ScriptWriter
 from utils.logging_config import setup_logging
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-_VALID_TONES = ["funny", "dramatic", "curious", "shocked", "unhinged"]
+_VALID_TONES = ["funny", "uncensored", "unhinged", "dramatic", "curious", "shocked"]
 _EMBED_COLOR_SUCCESS = discord.Color.from_rgb(0, 200, 100)
 _EMBED_COLOR_FAILURE = discord.Color.from_rgb(220, 50, 50)
 _EMBED_COLOR_INFO = discord.Color.from_rgb(88, 101, 242)  # Discord blurple
@@ -48,43 +58,49 @@ _EMBED_COLOR_INFO = discord.Color.from_rgb(88, 101, 242)  # Discord blurple
 _START_TIME = datetime.now(timezone.utc)
 
 
-import random
-import uuid
-from pathlib import Path
-from pipeline.reddit_scraper import RedditScraper
-from pipeline.script_writer import ScriptWriter
-from pipeline.caption_generator import CaptionGenerator
-
 class ThreadPreviewView(discord.ui.View):
     """Interactive view for generated Reddit thread previews."""
-    def __init__(self, subreddit: str, tone: str, post_title: str):
+
+    def __init__(self, subreddit: str, tone: str, post_title: str) -> None:
         super().__init__(timeout=600)
         self.subreddit = subreddit
         self.tone = tone
         self.post_title = post_title
 
     @discord.ui.button(label="🎬 Post Reel to Instagram", style=discord.ButtonStyle.success, emoji="🚀")
-    async def post_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        for item in self.children:
-            item.disabled = True
-        await interaction.response.edit_message(view=self)
-
-        await interaction.followup.send(
-            embed=_build_progress_embed(self.subreddit, self.tone, stage="🚀 Creating 40+ second Reel & publishing to Instagram…"),
-            ephemeral=False,
-        )
-        asyncio.create_task(
-            _run_pipeline_and_report(interaction, self.subreddit, self.tone, dry_run=False, is_followup=True)
-        )
-
-    @discord.ui.button(label="🎲 Another Thread", style=discord.ButtonStyle.secondary, emoji="🔄")
-    async def another_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def post_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         for item in self.children:
             item.disabled = True
         try:
-            await interaction.response.edit_message(view=self)
-        except Exception:
-            pass
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(view=self)
+            else:
+                if interaction.message:
+                    await interaction.message.edit(view=self)
+        except Exception as exc:
+            logger.debug("Could not disable buttons: %s", exc)
+
+        progress_msg = await interaction.followup.send(
+            embed=_build_progress_embed(self.subreddit, self.tone, stage="🚀 Creating Reel & publishing to Instagram…"),
+            ephemeral=False,
+        )
+        asyncio.create_task(
+            _run_pipeline_and_report(interaction, self.subreddit, self.tone, dry_run=False, status_message=progress_msg)
+        )
+
+    @discord.ui.button(label="🎲 Another Thread", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def another_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        for item in self.children:
+            item.disabled = True
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(view=self)
+            else:
+                if interaction.message:
+                    await interaction.message.edit(view=self)
+        except Exception as exc:
+            logger.debug("Could not edit view: %s", exc)
+
         await _generate_and_send_thread(interaction, subreddit=None, tone=self.tone, is_followup=True)
 
 
@@ -99,19 +115,23 @@ async def _generate_and_send_thread(
     chosen_sub = subreddit.strip().lstrip("r/").lower() if (subreddit and subreddit.lower() != "random") else random.choice(meme_subs)
     chosen_tone = tone or "funny"
 
-    # Progress message
     loading_embed = discord.Embed(
         title=f"🔍 Fetching Random Thread from r/{chosen_sub}...",
         description="⏳ Scraping post, capturing image card, and writing AI voiceover preview…",
         color=_EMBED_COLOR_INFO,
     )
 
+    is_interaction = hasattr(interaction_or_ctx, "response")
     msg = None
-    if hasattr(interaction_or_ctx, "response"):
+
+    if is_interaction:
+        interaction = interaction_or_ctx
         if is_followup:
-            msg = await interaction_or_ctx.followup.send(embed=loading_embed)
-        elif not interaction_or_ctx.response.is_done():
-            await interaction_or_ctx.response.send_message(embed=loading_embed)
+            msg = await interaction.followup.send(embed=loading_embed)
+        elif not interaction.response.is_done():
+            await interaction.response.send_message(embed=loading_embed)
+        else:
+            msg = await interaction.followup.send(embed=loading_embed)
     else:
         msg = await interaction_or_ctx.send(embed=loading_embed)
 
@@ -141,18 +161,15 @@ async def _generate_and_send_thread(
             color=discord.Color.from_rgb(255, 69, 0),  # Reddit Orange
         )
 
-        # Attach Screenshot (Clean meme card without comments)
         file = discord.File(str(screenshot_path.resolve()), filename="card.png")
         embed.set_image(url="attachment://card.png")
 
-        # Voiceover Preview
         embed.add_field(
             name=f"🎙️ AI Narration Script ({words} words • ~{est_sec}s Reel)",
             value=f"```\n{script[:600]}\n```",
             inline=False,
         )
 
-        # Instagram Caption Preview
         embed.add_field(
             name="📱 Viral Instagram Caption & Tags",
             value=f"{caption_obj.text[:300]}\n\n*{' '.join(caption_obj.hashtags[:6])}*",
@@ -163,14 +180,27 @@ async def _generate_and_send_thread(
 
         view = ThreadPreviewView(chosen_sub, chosen_tone, post.title)
 
-        if hasattr(interaction_or_ctx, "response"):
-            if is_followup:
-                await interaction_or_ctx.followup.send(embed=embed, file=file, view=view)
-            else:
-                await interaction_or_ctx.edit_original_response(embed=embed, attachments=[file], view=view)
+        if is_interaction:
+            interaction = interaction_or_ctx
+            if not is_followup:
+                try:
+                    await interaction.edit_original_response(embed=embed, attachments=[file], view=view)
+                    return
+                except Exception as exc:
+                    logger.debug("Could not edit original response: %s", exc)
+
+            await interaction.followup.send(embed=embed, file=file, view=view)
+            if msg and hasattr(msg, "delete"):
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
         else:
             if msg:
-                await msg.delete()
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
             await interaction_or_ctx.send(embed=embed, file=file, view=view)
 
     except Exception as exc:
@@ -180,25 +210,34 @@ async def _generate_and_send_thread(
             description=f"Failed to fetch from r/{chosen_sub}:\n```{exc}```",
             color=_EMBED_COLOR_FAILURE,
         )
-        if hasattr(interaction_or_ctx, "response"):
-            if is_followup:
-                await interaction_or_ctx.followup.send(embed=err_embed)
-            else:
-                await interaction_or_ctx.edit_original_response(embed=err_embed)
+        if is_interaction:
+            interaction = interaction_or_ctx
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(embed=err_embed)
+                else:
+                    await interaction.response.send_message(embed=err_embed)
+            except Exception:
+                if interaction.channel:
+                    await interaction.channel.send(embed=err_embed)
         else:
             await interaction_or_ctx.send(embed=err_embed)
 
 
 class AutoposterBot(commands.Bot):
+    """Custom commands.Bot instance for Autoposter."""
+
     def __init__(self) -> None:
         intents = discord.Intents.default()
-        super().__init__(command_prefix=["!", "?"], intents=intents)
+        super().__init__(
+            command_prefix=commands.when_mentioned_or("!", "?"),
+            intents=intents,
+            help_command=None,
+        )
         self.dedup_store = DedupStore()
 
     async def setup_hook(self) -> None:
         await self.dedup_store.init()
-        await self.tree.sync()
-        logger.info("Slash commands synced to Discord")
 
 
 bot = AutoposterBot()
@@ -213,7 +252,7 @@ bot = AutoposterBot()
     description="🎲 Generate a random Reddit thread with screenshot card, script & caption preview",
 )
 @app_commands.describe(
-    subreddit="Subreddit name (default: random funny subreddit, or specify e.g. funny, tifu, facepalm)",
+    subreddit="Subreddit name (default: random funny subreddit, or e.g. memes, me_irl)",
     tone="Tone style (default: funny)",
 )
 @app_commands.choices(tone=[
@@ -249,8 +288,8 @@ async def random_command(
     description="Generate and post a fresh Reel to Instagram (default: r/memes)",
 )
 @app_commands.describe(
-    subreddit="Subreddit name (default: memes, or dankmemes, me_irl, comedyheaven)",
-    tone="Script/caption tone style (default: funny)",
+    subreddit="Subreddit name (e.g. memes, r/memes, dankmemes)",
+    tone="Script/caption tone style (select 'uncensored' for 18+ raw comedy, or funny, unhinged)",
 )
 @app_commands.choices(tone=[
     app_commands.Choice(name=t, value=t) for t in _VALID_TONES
@@ -264,14 +303,15 @@ async def post_command(
     subreddit = subreddit.strip().lstrip("r/").lower()
     tone_value = tone.value if tone else "funny"
 
-    # defer() shows Discord's "thinking..." indicator and keeps the token alive
-    await interaction.response.defer(ephemeral=False)
-    await interaction.followup.send(
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=False)
+
+    msg = await interaction.followup.send(
         embed=_build_progress_embed(subreddit, tone_value, stage="🚀 Starting Reel generation pipeline…"),
     )
 
     asyncio.create_task(
-        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=False)
+        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=False, status_message=msg)
     )
 
 
@@ -295,13 +335,15 @@ async def dryrun_command(
     subreddit = subreddit.strip().lstrip("r/").lower()
     tone_value = tone.value if tone else "funny"
 
-    await interaction.response.defer(ephemeral=False)
-    await interaction.followup.send(
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=False)
+
+    msg = await interaction.followup.send(
         embed=_build_progress_embed(subreddit, tone_value, stage="🧪 Rendering test Reel (dry-run)…"),
     )
 
     asyncio.create_task(
-        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=True)
+        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=True, status_message=msg)
     )
 
 
@@ -324,74 +366,31 @@ async def generate(
     """Slash command: trigger the full Reddit → Instagram Reels pipeline."""
     subreddit = subreddit.strip().lstrip("r/").lower()
     if not subreddit.replace("_", "").isalnum():
-        await interaction.response.send_message(
-            "❌ Invalid subreddit name. Use only letters, numbers, and underscores.",
-            ephemeral=True,
-        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "❌ Invalid subreddit name. Use only letters, numbers, and underscores.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                "❌ Invalid subreddit name. Use only letters, numbers, and underscores.",
+                ephemeral=True,
+            )
         return
 
     tone_value = tone.value if tone else None
 
-    # defer() immediately — pipeline takes time
-    await interaction.response.defer(ephemeral=False)
-    await interaction.followup.send(
-        embed=_build_progress_embed(subreddit, tone_value, stage="Starting…"),
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=False)
+
+    msg = await interaction.followup.send(
+        embed=_build_progress_embed(subreddit, tone_value, stage="🚀 Starting Reel generation pipeline…"),
     )
 
-    # Run pipeline in background
     asyncio.create_task(
-        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=False)
+        _run_pipeline_and_report(interaction, subreddit, tone_value, dry_run=False, status_message=msg)
     )
 
-
-# ---------------------------------------------------------------------------
-# Text Prefix Commands (!thread, ?thread, !post, ?post, !random)
-# ---------------------------------------------------------------------------
-
-@bot.command(name="thread", aliases=["random", "getthread"])
-async def prefix_thread(ctx: commands.Context, subreddit: str = "random") -> None:
-    """Text command: !thread or ?thread [subreddit]"""
-    await _generate_and_send_thread(ctx, subreddit=subreddit, tone="funny")
-
-
-@bot.command(name="post")
-async def prefix_post(ctx: commands.Context, subreddit: str = "memes") -> None:
-    """Text command: !post or ?post [subreddit]"""
-    sub = subreddit.strip().lstrip("r/").lower()
-    await ctx.send(f"🚀 Starting Reel generation for **r/{sub}** and posting to Instagram...")
-    result = await run_pipeline(sub, tone="funny", dry_run=False)
-    embed = _build_result_embed(result)
-    await ctx.send(embed=embed)
-
-
-async def _run_pipeline_and_report(
-    interaction: discord.Interaction,
-    subreddit: str,
-    tone: str | None,
-    dry_run: bool = False,
-    is_followup: bool = True,  # Always followup now (commands use defer+followup)
-) -> None:
-    """Run the pipeline and send the result back via followup (works after defer)."""
-    try:
-        result = await run_pipeline(subreddit, tone=tone, dry_run=dry_run)
-        embed = _build_result_embed(result)
-        await interaction.followup.send(embed=embed)
-    except Exception as exc:
-        logger.exception("Unhandled error in pipeline task")
-        error_embed = discord.Embed(
-            title="💥 Pipeline Failed",
-            description=f"Something went wrong:\n```{exc}```",
-            color=_EMBED_COLOR_FAILURE,
-        )
-        try:
-            await interaction.followup.send(embed=error_embed)
-        except Exception as inner:
-            logger.warning("Could not send error followup to Discord: %s", inner)
-
-
-# ---------------------------------------------------------------------------
-# /history command
-# ---------------------------------------------------------------------------
 
 @bot.tree.command(
     name="history",
@@ -406,9 +405,14 @@ async def history(
     posts = await bot.dedup_store.get_recent(limit)
 
     if not posts:
-        await interaction.response.send_message(
-            "📭 No Reels have been posted yet.", ephemeral=True
-        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "📭 No Reels have been posted yet.", ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                "📭 No Reels have been posted yet.", ephemeral=True
+            )
         return
 
     embed = discord.Embed(
@@ -425,12 +429,11 @@ async def history(
             inline=False,
         )
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    if not interaction.response.is_done():
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
-
-# ---------------------------------------------------------------------------
-# /status command
-# ---------------------------------------------------------------------------
 
 @bot.tree.command(name="status", description="Show bot status and health")
 async def status(interaction: discord.Interaction) -> None:
@@ -445,12 +448,207 @@ async def status(interaction: discord.Interaction) -> None:
     )
     embed.add_field(name="Uptime", value=f"{hours}h {minutes}m", inline=True)
     embed.add_field(name="Total Reels posted", value=str(total), inline=True)
-    embed.add_field(
-        name="Bot latency",
-        value=f"{round(bot.latency * 1000)}ms",
-        inline=True,
+    embed.add_field(name="Bot latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
+    embed.add_field(name="Connected Servers", value=str(len(bot.guilds)), inline=True)
+
+    if not interaction.response.is_done():
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# Text Prefix Commands (!thread, ?thread, !post, ?post, !dryrun, !status, !help)
+# Works with prefix AND with @mention: @autopostbot post
+# ---------------------------------------------------------------------------
+
+@bot.command(name="thread", aliases=["random", "getthread"])
+async def prefix_thread(ctx: commands.Context, subreddit: str = "random") -> None:
+    """Text command: !thread or ?thread [subreddit]"""
+    await _generate_and_send_thread(ctx, subreddit=subreddit, tone="funny")
+
+
+@bot.command(name="post")
+async def prefix_post(ctx: commands.Context, subreddit: str = "memes", tone: str = "funny") -> None:
+    """Text command: !post [subreddit] [tone] (e.g. !post r/memes uncensored)"""
+    sub = subreddit.strip().lstrip("r/").strip("/").lower()
+    chosen_tone = tone.strip().lower()
+    msg = await ctx.send(embed=_build_progress_embed(sub, chosen_tone, stage="🚀 Starting Reel generation pipeline…"))
+    try:
+        result = await run_pipeline(sub, tone=chosen_tone, dry_run=False)
+        embed = _build_result_embed(result)
+        try:
+            await msg.edit(embed=embed)
+        except Exception:
+            await ctx.send(embed=embed)
+    except Exception as exc:
+        logger.exception("Error in !post command: %s", exc)
+        err_embed = discord.Embed(
+            title="💥 Pipeline Failed",
+            description=f"```{exc}```",
+            color=_EMBED_COLOR_FAILURE,
+        )
+        try:
+            await msg.edit(embed=err_embed)
+        except Exception:
+            await ctx.send(embed=err_embed)
+
+
+@bot.command(name="dryrun")
+async def prefix_dryrun(ctx: commands.Context, subreddit: str = "memes", tone: str = "funny") -> None:
+    """Text command: !dryrun [subreddit] [tone] (e.g. !dryrun r/memes uncensored)"""
+    sub = subreddit.strip().lstrip("r/").strip("/").lower()
+    chosen_tone = tone.strip().lower()
+    msg = await ctx.send(embed=_build_progress_embed(sub, chosen_tone, stage="🧪 Rendering test Reel (dry-run)…"))
+    try:
+        result = await run_pipeline(sub, tone=chosen_tone, dry_run=True)
+        embed = _build_result_embed(result)
+        try:
+            await msg.edit(embed=embed)
+        except Exception:
+            await ctx.send(embed=embed)
+    except Exception as exc:
+        logger.exception("Error in !dryrun command: %s", exc)
+        await ctx.send(f"❌ Error: {exc}")
+
+
+@bot.command(name="status")
+async def prefix_status(ctx: commands.Context) -> None:
+    """Text command: !status"""
+    uptime = datetime.now(timezone.utc) - _START_TIME
+    hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+    minutes = remainder // 60
+    total = await bot.dedup_store.count()
+    embed = discord.Embed(
+        title="🤖 Autoposter Status",
+        color=_EMBED_COLOR_INFO,
     )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    embed.add_field(name="Uptime", value=f"{hours}h {minutes}m", inline=True)
+    embed.add_field(name="Total Reels posted", value=str(total), inline=True)
+    embed.add_field(name="Bot latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
+    embed.add_field(name="Connected Servers", value=str(len(bot.guilds)), inline=True)
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="history")
+async def prefix_history(ctx: commands.Context, limit: int = 5) -> None:
+    """Text command: !history [limit]"""
+    limit = max(1, min(limit, 20))
+    posts = await bot.dedup_store.get_recent(limit)
+    if not posts:
+        await ctx.send("📭 No Reels have been posted yet.")
+        return
+
+    embed = discord.Embed(
+        title=f"📋 Last {len(posts)} Posted Reels",
+        color=_EMBED_COLOR_INFO,
+    )
+    for post in posts:
+        title = (post.get("reddit_title") or "(no title)")[:50]
+        reel_url = post.get("reel_url") or "N/A"
+        posted_at = post.get("posted_at", "")[:10]
+        embed.add_field(
+            name=f"r/{post['subreddit']} — {posted_at}",
+            value=f"**{title}**\n[View Reel]({reel_url})" if reel_url != "N/A" else f"**{title}**",
+            inline=False,
+        )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="help")
+async def prefix_help(ctx: commands.Context) -> None:
+    """Text command: !help"""
+    embed = discord.Embed(
+        title="📖 Autoposter Commands",
+        description="You can use slash commands (`/`), text commands (`!`), or mention the bot (@autopostbot):",
+        color=_EMBED_COLOR_INFO,
+    )
+    embed.add_field(
+        name="🎬 Create & Post Reels",
+        value=(
+            "• `/post [subreddit] [tone]` or `!post [subreddit]`\n"
+            "  *Full pipeline: scrape Reddit meme, AI script & voiceover, compose 9:16 video, and publish to Instagram Reels.*\n\n"
+            "• `/thread [subreddit]` or `!thread`\n"
+            "  *Preview Reddit post card, AI voiceover script & caption with instant 'Post' button.*\n\n"
+            "• `/dryrun [subreddit]` or `!dryrun`\n"
+            "  *Full test run rendering the video without publishing to Instagram.*"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="📊 Management & Info",
+        value=(
+            "• `/status` or `!status` — View uptime and connection latency\n"
+            "• `/history` or `!history` — View recently published Reels\n"
+            "• `/help` or `!help` — Show this guide"
+        ),
+        inline=False,
+    )
+    await ctx.send(embed=embed)
+
+
+# ---------------------------------------------------------------------------
+# Background Pipeline Reporter
+# ---------------------------------------------------------------------------
+
+async def _run_pipeline_and_report(
+    interaction: discord.Interaction,
+    subreddit: str,
+    tone: str | None,
+    dry_run: bool = False,
+    status_message: discord.Message | discord.WebhookMessage | None = None,
+) -> None:
+    """Run the pipeline and send the result back via status message edit or followup."""
+    try:
+        result = await run_pipeline(subreddit, tone=tone, dry_run=dry_run)
+        embed = _build_result_embed(result)
+
+        delivered = False
+        if status_message:
+            try:
+                await status_message.edit(embed=embed)
+                delivered = True
+            except Exception as exc:
+                logger.debug("Could not edit initial status message: %s", exc)
+
+        if not delivered:
+            try:
+                await interaction.followup.send(embed=embed)
+                delivered = True
+            except Exception as exc:
+                logger.debug("Could not send followup message: %s", exc)
+
+        if not delivered and interaction.channel:
+            try:
+                await interaction.channel.send(embed=embed)
+            except Exception as exc:
+                logger.warning("Could not send embed to channel: %s", exc)
+
+    except Exception as exc:
+        logger.exception("Unhandled error in pipeline task: %s", exc)
+        error_embed = discord.Embed(
+            title="💥 Pipeline Failed",
+            description=f"Something went wrong:\n```{exc}```",
+            color=_EMBED_COLOR_FAILURE,
+        )
+        delivered = False
+        if status_message:
+            try:
+                await status_message.edit(embed=error_embed)
+                delivered = True
+            except Exception:
+                pass
+        if not delivered:
+            try:
+                await interaction.followup.send(embed=error_embed)
+                delivered = True
+            except Exception:
+                pass
+        if not delivered and interaction.channel:
+            try:
+                await interaction.channel.send(embed=error_embed)
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -460,12 +658,36 @@ async def status(interaction: discord.Interaction) -> None:
 @bot.event
 async def on_ready() -> None:
     logger.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
+
+    # 1. Global slash command sync
+    try:
+        synced_global = await bot.tree.sync()
+        logger.info("Synced %d global slash commands", len(synced_global))
+    except Exception as exc:
+        logger.warning("Could not sync global slash commands: %s", exc)
+
+    # 2. Clear any lingering guild-specific commands so Discord never displays duplicates
+    for guild in bot.guilds:
+        try:
+            bot.tree.clear_commands(guild=guild)
+            await bot.tree.sync(guild=guild)
+            logger.debug("Cleaned guild commands for '%s'", guild.name)
+        except Exception as exc:
+            logger.debug("Could not clear guild commands for '%s': %s", guild.name, exc)
+
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="Reddit for content 👀",
+            name="Reddit for content 👀 | /post or !post",
         )
     )
+
+
+@bot.event
+async def on_message(message: discord.Message) -> None:
+    if message.author.bot:
+        return
+    await bot.process_commands(message)
 
 
 @bot.event
@@ -474,12 +696,27 @@ async def on_app_command_error(
     error: app_commands.AppCommandError,
 ) -> None:
     logger.error("Slash command error: %s", error)
-    msg = "❌ An error occurred while running this command."
+    msg = f"❌ Error running command: {error}"
     try:
         if interaction.response.is_done():
             await interaction.followup.send(msg, ephemeral=True)
         else:
             await interaction.response.send_message(msg, ephemeral=True)
+    except Exception:
+        if interaction.channel:
+            try:
+                await interaction.channel.send(msg)
+            except Exception:
+                pass
+
+
+@bot.event
+async def on_command_error(ctx: commands.Context, error: commands.CommandError) -> None:
+    if isinstance(error, commands.CommandNotFound):
+        return
+    logger.error("Prefix command error: %s", error)
+    try:
+        await ctx.send(f"❌ Error: {error}")
     except Exception:
         pass
 
@@ -546,6 +783,7 @@ def main() -> None:
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         raise EnvironmentError("DISCORD_BOT_TOKEN must be set in .env")
+
     logger.info("Starting Autoposter Discord bot…")
     bot.run(token)
 

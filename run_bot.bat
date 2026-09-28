@@ -1,4 +1,6 @@
 @echo off
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
 title Reddit-to-Instagram Autoposter Bot
 echo ========================================================
 echo   STARTING AUTOPOSTER DISCORD BOT

@@ -90,9 +90,9 @@ video:
   width: 1080
   height: 1920
   fps: 30
-  # libx264 CRF (18=lossless quality, 28=smallest file; 23 is a good default)
-  crf: 23
-  audio_bitrate: 128k
+  # libx264 CRF (18=near-lossless high quality, 23=standard)
+  crf: 18
+  audio_bitrate: 192k
   # Seconds of extra video padding after voiceover ends
   tail_padding_sec: 1.0
   # Gameplay clips directory (relative to project root)
@@ -106,10 +106,10 @@ video:
 
 # ---- LLM (Google Gemini - Free) -----------------------------
 llm:
-  # Model for script generation (Gemini Flash = fast + free)
-  script_model: gemini-flash-latest
+  # Model for script generation (Gemini 3.8 Flash = fast + latest)
+  script_model: gemini-3.8-flash
   # Model for caption generation
-  caption_model: gemini-flash-latest
+  caption_model: gemini-3.8-flash
   max_tokens: 1500
   temperature: 1.0
   # Tone presets — focused on funny and viral comedy
