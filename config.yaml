@@ -146,3 +146,15 @@ logging:
   # Max log file size in bytes before rotation
   max_bytes: 10485760   # 10 MB
   backup_count: 5
+
+# =============================================================
+# Dialogue Comedy Shorts Configuration (Dr. Ethan Kwan Format)
+# =============================================================
+dialogue_shorts:
+  default_voice_a: "en-US-ChristopherNeural"   # High-energy / delusional character
+  default_voice_b: "en-US-GuyNeural"           # Deadpan / straight-man character
+  speech_rate: "+16%"                          # Conversational acceleration
+  pause_duration_sec: 0.18                     # Fast turn-taking inter-turn silence
+  music_volume: 0.13                           # Comedic background music balance
+  voice_volume: 1.0                            # Dialogue volume level
+  burn_subtitles: false                        # Keep video clean without subtitle clutter
