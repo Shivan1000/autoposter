@@ -214,6 +214,7 @@ autoposter/
 │   ├── subtitle_builder.py    # Subtitle generator (.ass) with custom styling
 │   ├── tts_engine.py          # Multi-provider TTS engine (Kokoro, Fish Audio, ElevenLabs, Edge-TTS)
 │   └── video_composer.py      # FFmpeg video composer (overlay + audio + subtitles)
+    dialogue_short_generator.py # Dual-voiceover comedy shorts generator (Ethan Kwan style)
 ├── main.py                    # Application entrypoint
 ├── requirements.txt           # Python dependencies
 └── test_pipeline.py           # CLI test runner
@@ -235,3 +236,25 @@ autoposter/
 
 ## 📄 License
 MIT License. Feel free to modify and use for your own automated video creation workflows.
+
+
+---
+
+## 🎭 Dual-Voiceover Comedy Shorts Generator (Dr. Ethan Kwan Style)
+
+In addition to Reddit-to-Reels generation, Autoposter now includes a dedicated module for generating **dual-voiceover situational comedy shorts** modeled after Dr. Ethan Kwan's viral storytelling format:
+
+* **Dual AI Characters**: Contrasting neural voices (High-energy / delusional instigator vs. calm / deadpan sarcastic troll).
+* **High-Pacing Dialogue**: ~240-250 WPM with razor-thin 0.18s speaker transitions eliminating dead air.
+* **Clean Visuals**: Seamless 1080x1920 60fps vertical Minecraft parkour without subtitle clutter.
+* **Subtle Audio Ducking**: Dialogue mixed with comedic background tracks (e.g. *Sneaky Snitch*).
+
+### Quick Usage:
+
+```bash
+# Generate the Instagram Bot Disaster comedy reel
+python tools/generate_dialogue_short.py --preset instagram_bot --output bot_disaster.mp4
+
+# Generate the Gaming PC Upgrade comedy reel
+python tools/generate_dialogue_short.py --preset gaming_pc --output pc_upgrade.mp4
+```
