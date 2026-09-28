@@ -100,7 +100,7 @@ PRESET_SCRIPTS = {
         ("straight", "House gone. Tornado did remodeling. Living at her place."),
         ("delusional", "I am calling mom!"),
         ("straight", "Do not. If she thinks I am dead, she cannot ask me to fix her fence.")
-    ],,
+    ],
     "gaming_pc": [
         ("delusional", "Hey, you know computers, right?"),
         ("straight", "Yeah. Why?"),
